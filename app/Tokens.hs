@@ -1,7 +1,6 @@
 module Tokens where
 
 import Data.List (intercalate)
-
 data Types = TInt | TFloat | TBool | TNil
     deriving (Show, Eq)
 

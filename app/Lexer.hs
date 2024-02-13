@@ -4,7 +4,17 @@ import Control.Monad (msum)
 import Data.Char (isSpace)
 import Text.Regex.TDFA ((=~))
 
+import Data.List (intercalate)
+import Data.List.Split (splitOn)
+import State
 import Tokens
+
+newtype LexemeError
+    = UnidentifiedToken State -- when no regex match
+    deriving (Show, Eq)
+
+type SChar = (Char, State)
+type SToken = (TerminalToken, State)
 
 lexemes :: [(String, String -> TerminalToken)]
 lexemes =
@@ -43,28 +53,52 @@ lexemes =
     , ("[a-zA-Z0-9]+", Identifier)
     ]
 
-matchRegex :: String -> String -> Maybe (String, String)
-matchRegex pattern input =
-    let
-        (_, m, after) = input =~ pattern :: (String, String, String)
-     in
-        if not (null m) then Just (m, after) else Nothing
-
-match :: [Char] -> Maybe (TerminalToken, [Char])
-match input = msum matches
+tagCoordinates :: String -> [SChar]
+tagCoordinates string = intercalate [(' ', defaultState)] taggedLines
   where
-    regexToToken predicate token = do
-        (m, a) <- matchRegex ('^' : predicate) input
-        return (token m, a)
+    stringLines = splitOn "\n" string
+    taggedLines =
+        [ [ (char, defaultState{line = i, col = j})
+          | (j, char) <- zip [1 ..] strLine
+          ]
+        | (i, strLine) <- zip [1 ..] stringLines
+        ]
+
+matchRegex :: String -> [SChar] -> Maybe ([SChar], [SChar])
+matchRegex pattern input = if null m then Nothing else Just (mTagged, afterTagged)
+  where
+    (before, m, after) = map fst input =~ pattern :: (String, String, String)
+    mAndAfterInput = drop (length before) input
+    afterInput = drop (length before + length m) input
+    mTagged = take (length m) mAndAfterInput
+    afterTagged = take (length after) afterInput
+
+match :: [SChar] -> Either LexemeError (SToken, [SChar])
+match input =
+    case matched of
+        Nothing -> Left $ UnidentifiedToken ((snd . head) input)
+        Just value -> Right value
+  where
+    regexToToken :: String -> (String -> TerminalToken) -> Maybe (SToken, [SChar])
+    regexToToken predicate tokenizeLexeme = do
+        (m, after) <- matchRegex ('^' : predicate) input
+        let mString = map fst m :: String
+        let mCoord = (snd . head) m
+        let lexTok = (tokenizeLexeme mString, mCoord) :: SToken
+        return (lexTok, after)
     matches = map (uncurry regexToToken) lexemes
+    matched = msum matches
 
-tokenize :: String -> Maybe [TerminalToken]
-tokenize input =
+tokenizeTagged :: [SChar] -> Either LexemeError [SToken]
+tokenizeTagged input =
     if null trimmed
-        then Just []
+        then return []
         else do
-            (t, r) <- match trimmed
-            next <- tokenize r
-            return (t : next)
+            (lexTok, after) <- match trimmed
+            afterTok <- tokenizeTagged after
+            return (lexTok : afterTok)
   where
-    trimmed = dropWhile isSpace input
+    trimmed = dropWhile (\(char, _) -> isSpace char) input
+
+tokenize :: [Char] -> Either LexemeError [SToken]
+tokenize = tokenizeTagged . tagCoordinates

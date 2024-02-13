@@ -1,87 +1,169 @@
 module Parser where
 
+import Data.Either (isRight)
+import State (State)
 import Tokens
 
-type Parser = [Token] -> [Token]
+data PError
+    = MissingEndStatement
+    | ExtraEndStatement
+    | NotMatched
+    deriving (Show, Eq)
+
+data ParserError = ParserError PError State
+    deriving (Show, Eq)
+
+type SToken = (Token, State)
+type STerminalToken = (TerminalToken, State)
+
+type Parser = [Token] -> Either PError ([Token], Token, [Token])
 
 -- final parser
 parsers :: [Parser]
 parsers =
-    [ ifParser
+    [ literalParser
+    , varParser
+    , braceParser
+    , opParser
+    , sequenceParser
+    , ifParser
     , whileParser
     , callParser
     , functionParser
-    , sequenceParser
-    , braceParser
-    , opParser
-    , varParser
-    , literalParser
     ]
 
--- main parser that composes the other individual parsers
-mainParse :: Parser
-mainParse tokens = unwind $ filter (notElem ExprErr) [par tokens | par <- parsers]
+-- manages the perror into a parser error with the state of the token
+handleParser :: Parser -> [SToken] -> Either ParserError [SToken]
+handleParser _ [] = Right []
+handleParser parser sTokens = case parsed of
+    Left err -> Left $ ParserError err representativeState
+    Right (before, expr, after) -> do
+        let sBefore = matchState before
+        let sExpr = [(expr, representativeState)]
+        let sAfter = matchStateRev after
+        return $ sBefore ++ sExpr ++ sAfter
   where
-    unwind (x : _) = x
-    unwind [] = [ExprErr]
+    matchState toks = zip toks states
+    matchStateRev toks = reverse $ zip (reverse toks) (reverse states)
+    rawTokens = map fst sTokens
+    states = map snd sTokens
+    representativeState = snd $ head sTokens
+    parsed = parser rawTokens
 
--- parse function
-parse :: [Token] -> IO Token
-parse [e] = return e
--- parsePipe :: [Token] -> Token
--- parsePipe [e] = e
-parse express = do
-    -- print $ "parsed" ++ show parsed
-    -- print $ "filtered:" ++ show filtered
-    -- print $ "new:" ++ show newExpr
-    parse newExpr
+-- get the best parsed option from the given list
+getBest :: [Either ParserError [SToken]] -> Either ParserError [SToken]
+getBest [] = Right []
+getBest expressions = head (rights ++ nonTrivialErrs ++ expressions)
   where
-    parseFrom i = take i express ++ mainParse (drop i express)
-    unwind (x : _) = x
-    unwind [] = [ExprErr]
-    parsed = zipWith (\i _ -> parseFrom i) [0 ..] express
-    filtered = filter (notElem ExprErr) parsed
-    newExpr = unwind filtered
+    catchNonTrivialErr (Left (ParserError NotMatched _)) = False
+    catchNonTrivialErr (Left (ParserError _ _)) = True
+    catchNonTrivialErr _ = False
+    rights = filter isRight expressions
+    nonTrivialErrs = filter catchNonTrivialErr expressions
 
+-- composes the individual parsers
+composedParser :: [SToken] -> [Either ParserError [SToken]]
+composedParser tokens = [par tokens | par <- map handleParser parsers]
+
+-- Parser entrypoint. calls the main
+parseScan :: [SToken] -> [Either ParserError [SToken]]
+parseScan expressions = parsedTentatives
+  where
+    prependT :: Int -> Either ParserError [SToken] -> Either ParserError [SToken]
+    prependT i toks = case toks of
+        Left err -> Left err
+        Right val -> Right $ take i expressions ++ val
+    parsePartialFrom i = map (prependT i) (composedParser (drop i expressions))
+    parsedTentatives = concat $ zipWith (\i _ -> parsePartialFrom i) [0 ..] expressions
+
+mainParser :: [SToken] -> Either ParserError SToken
+mainParser [e] = Right e
+mainParser expressions = getBest (parseScan expressions) >>= mainParser
+
+-- preprocess terminal tokens that come from the lexer
+parse :: [STerminalToken] -> Either ParserError SToken
+parse terminalTokens = parsed
+  where
+    toks = [(Terminal token, state) | (token, state) <- terminalTokens]
+    parsed = mainParser toks
 
 -- Defining each individual parser
+varParser :: Parser
+varParser
+    ( Terminal (Type _)
+            : Var _
+            : Terminal EndStatement
+            : Terminal EndStatement
+            : _
+        ) = Left ExtraEndStatement
+varParser
+    ( Var x
+            : Terminal Assigner
+            : Expr e
+            : Terminal EndStatement
+            : rest
+        ) = Right ([], Expr (Assign x e), rest)
+varParser
+    ( Var x
+            : Terminal Assigner
+            : Var y
+            : Terminal EndStatement
+            : rest
+        ) = Right ([], Expr (Assign x (Var y)), rest)
+varParser
+    ( Terminal (Type t)
+            : Var x
+            : Terminal EndStatement
+            : rest
+        ) = Right ([], Expr (Declare t x), rest)
+varParser
+    ( Terminal (Identifier x)
+            : rest
+        ) = Right ([], Var x, rest)
+varParser
+    ( Terminal (Type _)
+            : Var _
+            : _
+        ) = Left MissingEndStatement
+varParser _ = Left NotMatched
+
 braceParser :: Parser
 braceParser
     ( Terminal OpenParens
             : Expr i
             : Terminal CloseParens
             : rest
-        ) = Expr i : rest
+        ) = Right ([], Expr i, rest)
 braceParser
     ( Terminal OpenBrace
             : Expr i
             : Terminal CloseBrace
             : rest
-        ) = Expr (Sequence [i]) : rest
+        ) = Right ([], Expr (Sequence [i]), rest)
 braceParser
     ( Terminal OpenBrace
             : Sequence s
             : Terminal CloseBrace
             : rest
-        ) = Expr (Sequence s) : rest
+        ) = Right ([], Expr (Sequence s), rest)
 braceParser
     ( Terminal OpenBrace
             : Terminal CloseBrace
             : rest
-        ) = Expr (Sequence []) : rest
-braceParser _ = [ExprErr]
+        ) = Right ([], Expr (Sequence []), rest)
+braceParser _ = Left NotMatched
 
 literalParser :: Parser
-literalParser (Terminal (IntLiteral i) : rest) = Expr (IntValue i) : rest
-literalParser (Terminal (FloatLiteral i) : rest) = Expr (FloatValue i) : rest
-literalParser (Terminal (BoolLiteral i) : rest) = Expr (BoolValue i) : rest
-literalParser _ = [ExprErr]
+literalParser (Terminal (IntLiteral i) : rest) = Right ([], Expr (IntValue i), rest)
+literalParser (Terminal (FloatLiteral i) : rest) = Right ([], Expr (FloatValue i), rest)
+literalParser (Terminal (BoolLiteral i) : rest) = Right ([], Expr (BoolValue i), rest)
+literalParser _ = Left NotMatched
 
 sequenceParser :: Parser
-sequenceParser (Expr i : Expr j : rest) = Sequence [i, j] : rest
-sequenceParser (Sequence s : Expr i : rest) = Sequence (s ++ [i]) : rest
-sequenceParser (Expr j : Sequence s : rest) = Sequence (j : s) : rest
-sequenceParser _ = [ExprErr]
+sequenceParser (Expr i : Expr j : rest) = Right ([], Sequence [i, j], rest)
+sequenceParser (Sequence s : Expr i : rest) = Right ([], Sequence (s ++ [i]), rest)
+sequenceParser (Expr j : Sequence s : rest) = Right ([], Sequence (j : s), rest)
+sequenceParser _ = Left NotMatched
 
 isUnary :: Op -> Bool
 isUnary x = x `elem` [Not, Minus]
@@ -91,45 +173,18 @@ isBinary x = x /= Not
 
 opParser :: Parser
 opParser (Expr i : Terminal (Operator o) : Expr j : rest) =
-    if isBinary o then Expr (BinOp o i j) : rest else [ExprErr]
+    if isBinary o then Right ([], Expr (BinOp o i j), rest) else Left NotMatched
 opParser (Var i : Terminal (Operator o) : Expr j : rest) =
-    if isBinary o then Expr (BinOp o (Var i) j) : rest else [ExprErr]
+    if isBinary o then Right ([], Expr (BinOp o (Var i) j), rest) else Left NotMatched
 opParser (Var i : Terminal (Operator o) : Var j : rest) =
-    if isBinary o then Expr (BinOp o (Var i) (Var j)) : rest else [ExprErr]
+    if isBinary o then Right ([], Expr (BinOp o (Var i) (Var j)), rest) else Left NotMatched
 opParser (Expr i : Terminal (Operator o) : Var j : rest) =
-    if isBinary o then Expr (BinOp o i (Var j)) : rest else [ExprErr]
+    if isBinary o then Right ([], Expr (BinOp o i (Var j)), rest) else Left NotMatched
 opParser (Terminal (Operator o) : Expr i : rest) =
-    if isUnary o then Expr (UnOp o i) : rest else [ExprErr]
+    if isUnary o then Right ([], Expr (UnOp o i), rest) else Left NotMatched
 opParser (Terminal (Operator o) : Var i : rest) =
-    if isUnary o then Expr (UnOp o (Var i)) : rest else [ExprErr]
-opParser _ = [ExprErr]
-
-varParser :: Parser
-varParser
-    ( Var x
-            : Terminal Assigner
-            : Expr e
-            : Terminal EndStatement
-            : rest
-        ) = Expr (Assign x e) : rest
-varParser
-    ( Var x
-            : Terminal Assigner
-            : Var y
-            : Terminal EndStatement
-            : rest
-        ) = Expr (Assign x (Var y)) : rest
-varParser
-    ( Terminal (Type t)
-            : Var x
-            : Terminal EndStatement
-            : rest
-        ) = Expr (Declare t x) : rest
-varParser
-    ( Terminal (Identifier x)
-            : rest
-        ) = Var x : rest
-varParser _ = [ExprErr]
+    if isUnary o then Right ([], Expr (UnOp o (Var i)), rest) else Left NotMatched
+opParser _ = Left NotMatched
 
 whileParser :: Parser
 whileParser
@@ -138,8 +193,8 @@ whileParser
             : Terminal Do
             : Expr e
             : rest
-        ) = Expr (WhileLoop b e) : rest
-whileParser _ = [ExprErr]
+        ) = Right ([], Expr (WhileLoop b e), rest)
+whileParser _ = Left NotMatched
 
 ifParser :: Parser
 ifParser
@@ -150,68 +205,66 @@ ifParser
             : Terminal Else
             : Expr eelse
             : rest
-        ) = Expr (Conditional eif ethen eelse) : rest
-ifParser _ = [ExprErr]
+        ) = Right ([], Expr (Conditional eif ethen eelse), rest)
+ifParser _ = Left NotMatched
 
 functionParser :: Parser
--- arguments
 functionParser
     ( Terminal OpenBracket
             : Terminal (Type t)
             : Var x
             : Terminal CloseBracket
             : rest
-        ) = Arg t x : rest
-functionParser (Arg ta a : rest) = Args [Arg ta a] : rest
-functionParser (Args s : Arg ta a : rest) = Args (s ++ [Arg ta a]) : rest
--- body
+        ) = Right ([], Arg t x, rest)
+functionParser (Arg ta a : rest) = Right ([], Args [Arg ta a], rest)
+functionParser (Args s : Arg ta a : rest) = Right ([], Args (s ++ [Arg ta a]), rest)
 functionParser
     ( Terminal (Type t)
             : Var x
             : Args s
             : Expr e
             : rest
-        ) = Expr (Function x t (Args s) e) : rest
+        ) = Right ([], Expr (Function x t (Args s) e), rest)
 functionParser
     ( Terminal (Type t)
             : Var x
             : Expr e
             : rest
-        ) = Expr (Function x t (Args []) e) : rest
+        ) = Right ([], Expr (Function x t (Args []) e), rest)
 functionParser
     ( Terminal Return
             : Expr e
             : Terminal EndStatement
             : rest
-        ) = Expr (ReturnVal e) : rest
+        ) = Right ([], Expr (ReturnVal e), rest)
 functionParser
     ( Terminal Return
             : Var x
             : Terminal EndStatement
             : rest
-        ) = Expr (ReturnVal (Var x)) : rest
-functionParser _ = [ExprErr]
+        ) = Right ([], Expr (ReturnVal (Var x)), rest)
+functionParser _ = Left NotMatched
 
 callParser :: Parser
 callParser
     ( Terminal OpenBracket
             : Terminal CloseBracket
             : rest
-        ) = CallArgs [] : rest
+        ) = Right ([], CallArgs [], rest)
 callParser
     ( Terminal OpenBracket
             : Expr e
             : Terminal CloseBracket
             : rest
-        ) = CallArg e : rest
+        ) = Right ([], CallArg e, rest)
 callParser
     ( Terminal OpenBracket
             : Var x
             : Terminal CloseBracket
             : rest
-        ) = CallArg (Var x) : rest
-callParser (CallArg a : rest) = CallArgs [a] : rest
-callParser (CallArgs as : CallArg a : rest) = CallArgs (as ++ [a]) : rest
+        ) = Right ([], CallArg (Var x), rest)
+callParser (CallArg a : rest) = Right ([], CallArgs [a], rest)
+callParser (CallArgs as : CallArg a : rest) = Right ([], CallArgs (as ++ [a]), rest)
 callParser
     ( Var x
             : Terminal Assigner
@@ -219,11 +272,11 @@ callParser
             : CallArgs as
             : Terminal EndStatement
             : rest
-        ) = Expr (Assign x (Call f (CallArgs as))) : rest
+        ) = Right ([], Expr (Assign x (Call f (CallArgs as))), rest)
 callParser
     ( Var f
             : CallArgs as
             : Terminal EndStatement
             : rest
-        ) = Expr (Call f (CallArgs as)) : rest
-callParser _ = [ExprErr]
+        ) = Right ([], Expr (Call f (CallArgs as)), rest)
+callParser _ = Left NotMatched
