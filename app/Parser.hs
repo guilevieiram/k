@@ -1,119 +1,148 @@
 module Parser where
 
-import Lexer
+import Tokens
 
-{- PARSER -}
-data Token
-    = Expr Token
-    | Sequence [Token]
-    | Var String
-    | Arg Types String
-    | Args [Token]
-    | Function String Types Token Token
-    | CallArg Token
-    | CallArgs [Token]
-    | Call String Token
-    | ReturnVal Token
-    | Conditional Token Token Token
-    | WhileLoop Token Token
-    | Declare Types String
-    | Assign String Token
-    | BinOp Op Token Token
-    | UnOp Op Token
-    | Terminal TerminalToken
-    | IntValue Int
-    | FloatValue Float
-    | BoolValue Bool
-    | ExprErr
-    deriving (Show, Eq)
+type Parser = [Token] -> [Token]
 
-parsePipe :: [Token] -> IO Token
-parsePipe [e] = return e
+-- final parser
+parsers :: [Parser]
+parsers =
+    [ ifParser
+    , whileParser
+    , callParser
+    , functionParser
+    , sequenceParser
+    , braceParser
+    , opParser
+    , varParser
+    , literalParser
+    ]
+
+-- main parser that composes the other individual parsers
+mainParse :: Parser
+mainParse tokens = unwind $ filter (notElem ExprErr) [par tokens | par <- parsers]
+  where
+    unwind (x : _) = x
+    unwind [] = [ExprErr]
+
+-- parse function
+parse :: [Token] -> IO Token
+parse [e] = return e
 -- parsePipe :: [Token] -> Token
 -- parsePipe [e] = e
-parsePipe express = do
+parse express = do
+    -- print $ "parsed" ++ show parsed
     -- print $ "filtered:" ++ show filtered
     -- print $ "new:" ++ show newExpr
-    parsePipe newExpr
+    parse newExpr
   where
-    parsing i =
-        let (expr, after) = parse (drop i express)
-         in (take i express, expr, after)
-    parsed = zipWith (\i _ -> parsing i) [0 ..] express
-    filtered = filter (\(_, ee, _) -> ee /= ExprErr) parsed
-    newExpr =
-        if null filtered
-            then [ExprErr]
-            else let (b, e, a) = head filtered in b ++ [e] ++ a
+    parseFrom i = take i express ++ mainParse (drop i express)
+    unwind (x : _) = x
+    unwind [] = [ExprErr]
+    parsed = zipWith (\i _ -> parseFrom i) [0 ..] express
+    filtered = filter (notElem ExprErr) parsed
+    newExpr = unwind filtered
 
-unaryOperators :: [Op]
-unaryOperators = [Not, Minus]
-notBinaryOperators :: [Op]
-notBinaryOperators = [Not]
 
--- production rules but inverted
-parse :: [Token] -> (Token, [Token])
-parse
-    ( Terminal OpenBracket
-            : Terminal (Type t)
-            : Var x
-            : Terminal CloseBracket
+-- Defining each individual parser
+braceParser :: Parser
+braceParser
+    ( Terminal OpenParens
+            : Expr i
+            : Terminal CloseParens
             : rest
-        ) = (Arg t x, rest)
-parse (Arg ta a : rest) = (Args [Arg ta a], rest)
-parse (Args s : Arg ta a : rest) = (Args (s ++ [Arg ta a]), rest)
-parse
-    ( Terminal (Type t)
-            : Var x
-            : Args s
-            : Expr e
+        ) = Expr i : rest
+braceParser
+    ( Terminal OpenBrace
+            : Expr i
+            : Terminal CloseBrace
             : rest
-        ) =
-        (Expr (Function x t (Args s) e), rest)
-parse
-    ( Terminal (Type t)
-            : Var x
-            : Expr e
+        ) = Expr (Sequence [i]) : rest
+braceParser
+    ( Terminal OpenBrace
+            : Sequence s
+            : Terminal CloseBrace
             : rest
-        ) =
-        (Expr (Function x t (Args []) e), rest)
-parse
-    ( Terminal OpenBracket
-            : Terminal CloseBracket
+        ) = Expr (Sequence s) : rest
+braceParser
+    ( Terminal OpenBrace
+            : Terminal CloseBrace
             : rest
-        ) = (CallArgs [], rest)
-parse
-    ( Terminal OpenBracket
-            : Expr e
-            : Terminal CloseBracket
-            : rest
-        ) = (CallArg e, rest)
-parse
-    ( Terminal OpenBracket
-            : Var v
-            : Terminal CloseBracket
-            : rest
-        ) = (CallArg (Var v), rest)
-parse
-    (CallArg a : rest) = (CallArgs [a], rest)
-parse (CallArgs as : CallArg a : rest) = (CallArgs (as ++ [a]), rest)
-parse
+        ) = Expr (Sequence []) : rest
+braceParser _ = [ExprErr]
+
+literalParser :: Parser
+literalParser (Terminal (IntLiteral i) : rest) = Expr (IntValue i) : rest
+literalParser (Terminal (FloatLiteral i) : rest) = Expr (FloatValue i) : rest
+literalParser (Terminal (BoolLiteral i) : rest) = Expr (BoolValue i) : rest
+literalParser _ = [ExprErr]
+
+sequenceParser :: Parser
+sequenceParser (Expr i : Expr j : rest) = Sequence [i, j] : rest
+sequenceParser (Sequence s : Expr i : rest) = Sequence (s ++ [i]) : rest
+sequenceParser (Expr j : Sequence s : rest) = Sequence (j : s) : rest
+sequenceParser _ = [ExprErr]
+
+isUnary :: Op -> Bool
+isUnary x = x `elem` [Not, Minus]
+
+isBinary :: Op -> Bool
+isBinary x = x /= Not
+
+opParser :: Parser
+opParser (Expr i : Terminal (Operator o) : Expr j : rest) =
+    if isBinary o then Expr (BinOp o i j) : rest else [ExprErr]
+opParser (Var i : Terminal (Operator o) : Expr j : rest) =
+    if isBinary o then Expr (BinOp o (Var i) j) : rest else [ExprErr]
+opParser (Var i : Terminal (Operator o) : Var j : rest) =
+    if isBinary o then Expr (BinOp o (Var i) (Var j)) : rest else [ExprErr]
+opParser (Expr i : Terminal (Operator o) : Var j : rest) =
+    if isBinary o then Expr (BinOp o i (Var j)) : rest else [ExprErr]
+opParser (Terminal (Operator o) : Expr i : rest) =
+    if isUnary o then Expr (UnOp o i) : rest else [ExprErr]
+opParser (Terminal (Operator o) : Var i : rest) =
+    if isUnary o then Expr (UnOp o (Var i)) : rest else [ExprErr]
+opParser _ = [ExprErr]
+
+varParser :: Parser
+varParser
     ( Var x
             : Terminal Assigner
-            : Var f
-            : CallArgs as
+            : Expr e
             : Terminal EndStatement
             : rest
-        ) = (Expr (Assign x (Call f (CallArgs as))), rest)
-parse
-    ( Var f
-            : CallArgs as
+        ) = Expr (Assign x e) : rest
+varParser
+    ( Var x
+            : Terminal Assigner
+            : Var y
             : Terminal EndStatement
             : rest
-        ) = (Expr (Call f (CallArgs as)), rest)
-parse (Terminal Return : Expr e : Terminal EndStatement : rest) = (Expr (ReturnVal e), rest)
-parse (Terminal Return : Var x : Terminal EndStatement : rest) = (Expr (ReturnVal (Var x)), rest)
-parse
+        ) = Expr (Assign x (Var y)) : rest
+varParser
+    ( Terminal (Type t)
+            : Var x
+            : Terminal EndStatement
+            : rest
+        ) = Expr (Declare t x) : rest
+varParser
+    ( Terminal (Identifier x)
+            : rest
+        ) = Var x : rest
+varParser _ = [ExprErr]
+
+whileParser :: Parser
+whileParser
+    ( Terminal While
+            : Expr b
+            : Terminal Do
+            : Expr e
+            : rest
+        ) = Expr (WhileLoop b e) : rest
+whileParser _ = [ExprErr]
+
+ifParser :: Parser
+ifParser
     ( Terminal If
             : Expr eif
             : Terminal Then
@@ -121,39 +150,80 @@ parse
             : Terminal Else
             : Expr eelse
             : rest
-        ) =
-        (Expr (Conditional eif ethen eelse), rest)
-parse
-    ( Terminal While
-            : Expr b
-            : Terminal Do
+        ) = Expr (Conditional eif ethen eelse) : rest
+ifParser _ = [ExprErr]
+
+functionParser :: Parser
+-- arguments
+functionParser
+    ( Terminal OpenBracket
+            : Terminal (Type t)
+            : Var x
+            : Terminal CloseBracket
+            : rest
+        ) = Arg t x : rest
+functionParser (Arg ta a : rest) = Args [Arg ta a] : rest
+functionParser (Args s : Arg ta a : rest) = Args (s ++ [Arg ta a]) : rest
+-- body
+functionParser
+    ( Terminal (Type t)
+            : Var x
+            : Args s
             : Expr e
             : rest
-        ) = (Expr (WhileLoop b e), rest)
-parse (Terminal OpenBrace : Terminal CloseBrace : rest) = (Expr (Sequence []), rest)
-parse (Terminal (Identifier x) : rest) = (Var x, rest)
-parse (Terminal (Type t) : Var x : Terminal EndStatement : rest) = (Expr (Declare t x), rest)
-parse (Var x : Terminal Assigner : Expr e : Terminal EndStatement : rest) = (Expr (Assign x e), rest)
-parse (Var x : Terminal Assigner : Var y : Terminal EndStatement : rest) = (Expr (Assign x (Var y)), rest)
-parse (Expr i : Terminal (Operator o) : Expr j : rest) =
-    if o `elem` notBinaryOperators then (ExprErr, []) else (Expr (BinOp o i j), rest)
-parse (Var i : Terminal (Operator o) : Expr j : rest) =
-    if o `elem` notBinaryOperators then (ExprErr, []) else (Expr (BinOp o (Var i) j), rest)
-parse (Expr i : Terminal (Operator o) : Var j : rest) =
-    if o `elem` notBinaryOperators then (ExprErr, []) else (Expr (BinOp o i (Var j)), rest)
-parse (Var i : Terminal (Operator o) : Var j : rest) =
-    if o `elem` notBinaryOperators then (ExprErr, []) else (Expr (BinOp o (Var i) (Var j)), rest)
-parse (Terminal (Operator o) : Var j : rest) =
-    if o `elem` unaryOperators then (Expr (UnOp o (Var j)), rest) else (ExprErr, [])
-parse (Terminal (Operator o) : Expr j : rest) =
-    if o `elem` unaryOperators then (Expr (UnOp o j), rest) else (ExprErr, [])
-parse (Terminal OpenParens : Expr i : Terminal CloseParens : rest) = (Expr i, rest)
-parse (Terminal OpenBrace : Expr i : Terminal CloseBrace : rest) = (Expr (Sequence [i]), rest)
-parse (Terminal OpenBrace : Sequence s : Terminal CloseBrace : rest) = (Expr (Sequence s), rest)
-parse (Terminal (IntLiteral i) : rest) = (Expr (IntValue i), rest)
-parse (Terminal (FloatLiteral i) : rest) = (Expr (FloatValue i), rest)
-parse (Terminal (BoolLiteral i) : rest) = (Expr (BoolValue i), rest)
-parse (Expr i : Expr j : rest) = (Sequence [i, j], rest)
-parse (Sequence s : Expr i : rest) = (Sequence (s ++ [i]), rest)
-parse (Expr j : Sequence s : rest) = (Sequence (j : s), rest)
-parse _ = (ExprErr, [])
+        ) = Expr (Function x t (Args s) e) : rest
+functionParser
+    ( Terminal (Type t)
+            : Var x
+            : Expr e
+            : rest
+        ) = Expr (Function x t (Args []) e) : rest
+functionParser
+    ( Terminal Return
+            : Expr e
+            : Terminal EndStatement
+            : rest
+        ) = Expr (ReturnVal e) : rest
+functionParser
+    ( Terminal Return
+            : Var x
+            : Terminal EndStatement
+            : rest
+        ) = Expr (ReturnVal (Var x)) : rest
+functionParser _ = [ExprErr]
+
+callParser :: Parser
+callParser
+    ( Terminal OpenBracket
+            : Terminal CloseBracket
+            : rest
+        ) = CallArgs [] : rest
+callParser
+    ( Terminal OpenBracket
+            : Expr e
+            : Terminal CloseBracket
+            : rest
+        ) = CallArg e : rest
+callParser
+    ( Terminal OpenBracket
+            : Var x
+            : Terminal CloseBracket
+            : rest
+        ) = CallArg (Var x) : rest
+callParser (CallArg a : rest) = CallArgs [a] : rest
+callParser (CallArgs as : CallArg a : rest) = CallArgs (as ++ [a]) : rest
+callParser
+    ( Var x
+            : Terminal Assigner
+            : Var f
+            : CallArgs as
+            : Terminal EndStatement
+            : rest
+        ) = Expr (Assign x (Call f (CallArgs as))) : rest
+callParser
+    ( Var f
+            : CallArgs as
+            : Terminal EndStatement
+            : rest
+        ) = Expr (Call f (CallArgs as)) : rest
+callParser _ = [ExprErr]

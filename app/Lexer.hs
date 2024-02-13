@@ -2,52 +2,12 @@ module Lexer where
 
 import Control.Monad (msum)
 import Data.Char (isSpace)
-import System.Environment (getArgs)
 import Text.Regex.TDFA ((=~))
 
-data Types = TInt | TFloat | TBool
-    deriving (Show, Eq)
+import Tokens
 
-data Op
-    = Plus
-    | Minus
-    | Times
-    | Divide
-    | Gt
-    | Ge
-    | Lt
-    | Le
-    | Eq
-    | Neq
-    | Not
-    deriving (Show, Eq)
-
-data TerminalToken
-    = ERR
-    | OpenBrace
-    | CloseBrace
-    | OpenParens
-    | CloseParens
-    | OpenBracket
-    | CloseBracket
-    | EndStatement
-    | Return
-    | Assigner
-    | If
-    | Then
-    | Else
-    | While
-    | Do
-    | Type Types
-    | Operator Op
-    | IntLiteral Int
-    | FloatLiteral Float
-    | BoolLiteral Bool
-    | Identifier [Char]
-    deriving (Show, Eq)
-
-reducers :: [(String, String -> TerminalToken)]
-reducers =
+lexemes :: [(String, String -> TerminalToken)]
+lexemes =
     [ ("\\(", const OpenParens)
     , ("\\)", const CloseParens)
     , ("\\{", const OpenBrace)
@@ -83,9 +43,6 @@ reducers =
     , ("[a-zA-Z0-9]+", Identifier)
     ]
 
-trim :: [Char] -> [Char]
-trim = dropWhile isSpace
-
 matchRegex :: String -> String -> Maybe (String, String)
 matchRegex pattern input =
     let
@@ -99,14 +56,15 @@ match input = msum matches
     regexToToken predicate token = do
         (m, a) <- matchRegex ('^' : predicate) input
         return (token m, a)
-    matches = map (uncurry regexToToken) reducers
-lexer :: String -> Maybe [TerminalToken]
-lexer input =
+    matches = map (uncurry regexToToken) lexemes
+
+tokenize :: String -> Maybe [TerminalToken]
+tokenize input =
     if null trimmed
         then Just []
         else do
             (t, r) <- match trimmed
-            next <- lexer r
+            next <- tokenize r
             return (t : next)
   where
-    trimmed = trim input
+    trimmed = dropWhile isSpace input
