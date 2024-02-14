@@ -8,6 +8,7 @@ import Data.List (intercalate)
 import Data.List.Split (splitOn)
 import Source
 import Tokens
+import Utils
 
 newtype LexemeError
     = UnidentifiedToken Source -- when no regex match
@@ -49,8 +50,19 @@ lexemes =
     , ("false", \_ src -> BoolLiteral src False)
     , ("[0-9]+\\.[0-9]*", \s src -> FloatLiteral src $ read s)
     , ("[0-9]+", \s src -> IntLiteral src $ read s)
-    , ("[a-zA-Z0-9_]+", flip Identifier )
+    , ("[a-zA-Z0-9_]+", flip Identifier)
     ]
+
+
+removeComments :: [SChar] -> [SChar]
+removeComments (('/', _) : ('*', _) : rest) =
+    removeComments . drop 2 $
+        dropWhileList (not . matchEnd) rest
+  where
+    matchEnd (('*', _) : ('/', _) : _) = True
+    matchEnd _ = False
+removeComments (x : xs) = x : removeComments xs
+removeComments [] = []
 
 tagCoordinates :: String -> [SChar]
 tagCoordinates string = intercalate [(' ', defaultSource)] taggedLines
@@ -100,4 +112,4 @@ tokenizeTagged input =
     trimmed = dropWhile (\(char, _) -> isSpace char) input
 
 tokenize :: [Char] -> Either LexemeError [TerminalToken]
-tokenize = tokenizeTagged . tagCoordinates
+tokenize = tokenizeTagged . removeComments . tagCoordinates

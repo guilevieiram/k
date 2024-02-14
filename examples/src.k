@@ -1,9 +1,10 @@
 int main [float x] {
     int y;
     bool b;
-    y := b + 2 / (x -1);
+    y := b + 2 / (x - 1);
 }
 
+// this is a comment
 int f {
     bool bubuzinha;
     return bubuzinha;

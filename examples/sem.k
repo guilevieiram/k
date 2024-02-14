@@ -4,8 +4,8 @@ int f [float x] [int y]
     y := y - 2;
     return 1;
 }
-
 int x;
-x := f[1][2];
 
+/* this is a comment */
+x := f[1.0][2];
 

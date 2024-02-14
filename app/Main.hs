@@ -2,7 +2,7 @@ module Main where
 
 import System.Environment (getArgs)
 
-import Lexer (LexemeError, tokenize)
+import Lexer 
 import Parser
 import Tokens
 import Utils
@@ -36,7 +36,6 @@ main = do
             putStrLn $ "Parsed Code:\n\n" ++ show ast
             putStrLn "\n"
             putStrLn $ "Doing syntatic analysis:\n\n" ++ show pType
-    
 
 -- playground -> dont look too much
 --
