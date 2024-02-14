@@ -6,17 +6,16 @@ import Text.Regex.TDFA ((=~))
 
 import Data.List (intercalate)
 import Data.List.Split (splitOn)
-import State
+import Source
 import Tokens
 
 newtype LexemeError
-    = UnidentifiedToken State -- when no regex match
+    = UnidentifiedToken Source -- when no regex match
     deriving (Show, Eq)
 
-type SChar = (Char, State)
-type SToken = (TerminalToken, State)
+type SChar = (Char, Source)
 
-lexemes :: [(String, String -> TerminalToken)]
+lexemes :: [(String, String -> Source -> TerminalToken)]
 lexemes =
     [ ("\\(", const OpenParens)
     , ("\\)", const CloseParens)
@@ -26,39 +25,39 @@ lexemes =
     , ("\\]", const CloseBracket)
     , (";", const EndStatement)
     , (":=", const Assigner)
-    , ("\\+", (const . Operator) Plus)
-    , ("\\-", (const . Operator) Minus)
-    , ("\\*", (const . Operator) Times)
-    , ("/", (const . Operator) Divide)
-    , (">", (const . Operator) Gt)
-    , ("<", (const . Operator) Lt)
-    , (">=", (const . Operator) Ge)
-    , ("<=", (const . Operator) Le)
-    , ("=", (const . Operator) Eq)
-    , ("/=", (const . Operator) Neq)
-    , ("!", (const . Operator) Not)
+    , ("\\+", \_ src -> Operator src Plus)
+    , ("\\-", \_ src -> Operator src Minus)
+    , ("\\*", \_ src -> Operator src Times)
+    , ("/", \_ src -> Operator src Divide)
+    , (">", \_ src -> Operator src Gt)
+    , ("<", \_ src -> Operator src Lt)
+    , (">=", \_ src -> Operator src Ge)
+    , ("<=", \_ src -> Operator src Le)
+    , ("=", \_ src -> Operator src Eq)
+    , ("/=", \_ src -> Operator src Neq)
+    , ("!", \_ src -> Operator src Not)
     , ("return", const Return)
     , ("if", const If)
     , ("then", const Then)
     , ("else", const Else)
     , ("while", const While)
     , ("do", const Do)
-    , ("int", (const . Type) TInt)
-    , ("bool", (const . Type) TBool)
-    , ("float", (const . Type) TFloat)
-    , ("true", (const . BoolLiteral) True)
-    , ("false", (const . BoolLiteral) False)
-    , ("[0-9]+\\.[0-9]*", FloatLiteral . read)
-    , ("[0-9]+", IntLiteral . read)
-    , ("[a-zA-Z0-9]+", Identifier)
+    , ("int", \_ src -> Type src TInt)
+    , ("bool", \_ src -> Type src TBool)
+    , ("float", \_ src -> Type src TFloat)
+    , ("true", \_ src -> BoolLiteral src True)
+    , ("false", \_ src -> BoolLiteral src False)
+    , ("[0-9]+\\.[0-9]*", \s src -> FloatLiteral src $ read s)
+    , ("[0-9]+", \s src -> IntLiteral src $ read s)
+    , ("[a-zA-Z0-9_]+", flip Identifier )
     ]
 
 tagCoordinates :: String -> [SChar]
-tagCoordinates string = intercalate [(' ', defaultState)] taggedLines
+tagCoordinates string = intercalate [(' ', defaultSource)] taggedLines
   where
     stringLines = splitOn "\n" string
     taggedLines =
-        [ [ (char, defaultState{line = i, col = j})
+        [ [ (char, defaultSource{line = i, col = j})
           | (j, char) <- zip [1 ..] strLine
           ]
         | (i, strLine) <- zip [1 ..] stringLines
@@ -73,23 +72,23 @@ matchRegex pattern input = if null m then Nothing else Just (mTagged, afterTagge
     mTagged = take (length m) mAndAfterInput
     afterTagged = take (length after) afterInput
 
-match :: [SChar] -> Either LexemeError (SToken, [SChar])
+match :: [SChar] -> Either LexemeError (TerminalToken, [SChar])
 match input =
     case matched of
         Nothing -> Left $ UnidentifiedToken ((snd . head) input)
         Just value -> Right value
   where
-    regexToToken :: String -> (String -> TerminalToken) -> Maybe (SToken, [SChar])
+    regexToToken :: String -> (String -> Source -> TerminalToken) -> Maybe (TerminalToken, [SChar])
     regexToToken predicate tokenizeLexeme = do
         (m, after) <- matchRegex ('^' : predicate) input
         let mString = map fst m :: String
         let mCoord = (snd . head) m
-        let lexTok = (tokenizeLexeme mString, mCoord) :: SToken
+        let lexTok = tokenizeLexeme mString mCoord :: TerminalToken
         return (lexTok, after)
     matches = map (uncurry regexToToken) lexemes
     matched = msum matches
 
-tokenizeTagged :: [SChar] -> Either LexemeError [SToken]
+tokenizeTagged :: [SChar] -> Either LexemeError [TerminalToken]
 tokenizeTagged input =
     if null trimmed
         then return []
@@ -100,5 +99,5 @@ tokenizeTagged input =
   where
     trimmed = dropWhile (\(char, _) -> isSpace char) input
 
-tokenize :: [Char] -> Either LexemeError [SToken]
+tokenize :: [Char] -> Either LexemeError [TerminalToken]
 tokenize = tokenizeTagged . tagCoordinates

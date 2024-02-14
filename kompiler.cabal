@@ -61,7 +61,7 @@ executable kompiler
     main-is:        Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:  Lexer, Parser, Tokens, State, Utils
+    other-modules:  Lexer, Parser, Tokens, Source, Utils, Semantic
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -70,6 +70,7 @@ executable kompiler
     build-depends:    base ^>=4.17.2.1
                       , regex-tdfa
                       , split
+                      , mtl
 
     -- Directories containing source files.
     hs-source-dirs:   app

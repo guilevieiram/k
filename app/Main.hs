@@ -6,27 +6,37 @@ import Lexer (LexemeError, tokenize)
 import Parser
 import Tokens
 import Utils
+import Semantic 
 
 data CompileError
     = TokenizationError LexemeError
     | ParsingError ParserError
+    | SemanticAnalysisError SemanticError Token
     deriving (Show, Eq)
 
-pipe :: String -> Either CompileError Token
+pipe :: String -> Either CompileError (Token, Types)
 pipe source = do
     tokens <- tokenize source ->> TokenizationError
     ast <- parse tokens ->> ParsingError
-    Right $ fst ast
+    programType <- analyse ast ->> \x -> SemanticAnalysisError x ast
+    Right (ast, programType)
 
 main :: IO ()
 main = do
     args <- getArgs
     sourceCode <- readFile (head args)
+    putStrLn "tokenizing source code"
+    putStrLn sourceCode
     let tokenized = tokenize sourceCode
     print tokenized
-    let ast = pipe sourceCode
-    putStrLn $ "Parsed Code:\n\n" ++ show ast
-    putStrLn "\n"
+    let p = pipe sourceCode
+    case p of 
+        Left err -> print err
+        Right (ast, pType) -> do
+            putStrLn $ "Parsed Code:\n\n" ++ show ast
+            putStrLn "\n"
+            putStrLn $ "Doing syntatic analysis:\n\n" ++ show pType
+    
 
 -- playground -> dont look too much
 --
