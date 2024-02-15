@@ -63,6 +63,7 @@ data Token
     | IntValue Source Int
     | FloatValue Source Float
     | BoolValue Source Bool
+    | NilValue Source
     | Terminal TerminalToken
     deriving (Eq)
 
@@ -105,3 +106,4 @@ showAst (Terminal t) = ["TERMINAL " ++ show t]
 showAst (IntValue _ i) = ["Int " ++ show i]
 showAst (FloatValue _ f) = ["Float " ++ show f]
 showAst (BoolValue _ b) = ["Bool " ++ show b]
+showAst (NilValue _ ) = ["NILVAL" ]

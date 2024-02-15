@@ -12,3 +12,7 @@ dropWhileList _ [] = []
 dropWhileList predicate lst
     | predicate lst = dropWhileList predicate (tail lst)
     | otherwise = lst
+
+safeHead :: [a] -> Maybe a
+safeHead [] = Nothing
+safeHead (x : _) = Just x

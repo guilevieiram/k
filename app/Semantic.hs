@@ -5,6 +5,7 @@ import Data.Either (isLeft, isRight)
 import Data.List
 import Source
 import Tokens
+import Types (sysFunctions, fToken)
 
 {- Semantic analyser to validade our syntax tree -}
 data SemanticError
@@ -35,8 +36,12 @@ data StateStack = StateStack
     , funcs :: FunctionStack
     , defFuncs :: FunctionStack
     }
+
+sysFuncs :: [Token]
+sysFuncs = map fToken sysFunctions
+
 initialStack :: StateStack
-initialStack = StateStack{vars = [], defFuncs = [], funcs = []}
+initialStack = StateStack{vars = [], defFuncs = [], funcs = sysFuncs}
 
 analyse :: Token -> Either SemanticError Types
 analyse token = result
@@ -78,7 +83,7 @@ typeOf (UnOp src Minus t) = do
     tType <- typeOf t
     case tType of
         Left err -> return $ Left err
-        Right ty -> return $ if isNumeric ty then Right TBool else Left $ InvalidOperation src "Negating a non-boolean expression."
+        Right ty -> return $ if isNumeric ty then Right ty else Left $ InvalidOperation src "Negating a non-boolean expression."
 
 -- binary Operations
 typeOf (BinOp src o x y) = do
@@ -150,9 +155,8 @@ typeOf (WhileLoop src cond branch) = do
     tCond <- typeOf cond
     tBranch <- typeOf branch
     return $ case (tCond, tBranch) of
-        (Right TBool, Right TNil) -> Right TNil
+        (Right TBool, _) -> Right TNil
         (Right _, _) -> Left $ ConditionalError src "Condition does not resolve to boolean"
-        (_, Right _) -> Left $ BranchNotNil src "Branch does not evaluate to Nil on While loop"
         (Left err, _) -> Left err
 
 -- Function definition
@@ -160,16 +164,18 @@ typeOf func@(Function src _ _ args@(Args _ as) body) = do
     stacks <- get
     let defFuncStack = defFuncs stacks
     let varStack = vars stacks
+    let funcStack = funcs stacks
     put $
         stacks
             { vars = [(x, t) | (Arg _ t x) <- as] ++ varStack
             , defFuncs = func : defFuncStack
+            , funcs = func : funcStack
             }
+
     bodyType <- typeOf body
     argsType <- typeOf args
     let res = proc bodyType argsType
-    let funcStack = funcs stacks
-    put $ stacks{vars = varStack, defFuncs = defFuncStack, funcs = func : funcStack}
+    put $ stacks{vars = varStack, defFuncs = defFuncStack, funcs = func:funcStack}
     return res
   where
     proc (Right TNil) (Right TNil) = Right TNil
@@ -223,6 +229,7 @@ typeOf (CallArg _ val) = do typeOf val
 typeOf (Terminal t) = return . Left $ TerminalTokenFound t
 typeOf _ = return $ Left SemanticError
 
+-- utility functions
 matchArgs :: Source -> [Either SemanticError Types] -> [Either SemanticError Types] -> Either SemanticError Types
 matchArgs src fArgs cArgs
     | length fArgs /= length cArgs = Left $ NumberOfArgumentsUnmatch src "Number of args in call does not match function definition"

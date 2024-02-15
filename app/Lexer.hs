@@ -46,6 +46,7 @@ lexemes =
     , ("int", \_ src -> Type src TInt)
     , ("bool", \_ src -> Type src TBool)
     , ("float", \_ src -> Type src TFloat)
+    , ("nil", \_ src -> Type src TNil)
     , ("true", \_ src -> BoolLiteral src True)
     , ("false", \_ src -> BoolLiteral src False)
     , ("[0-9]+\\.[0-9]*", \s src -> FloatLiteral src $ read s)
