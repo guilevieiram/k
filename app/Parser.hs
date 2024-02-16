@@ -1,19 +1,20 @@
 module Parser where
 
 import Data.Either (isRight)
-import Source
 import Tokens
 
--- TODO better parsing errors
+type Parser = [Token] -> Either ParserError [Token]
+
 data ParserError
     = MissingEndStatement Source
     | ExtraEndStatement Source
     | NotMatched Source
     deriving (Show, Eq)
 
-type Parser = [Token] -> Either ParserError [Token]
+-- entrypoint
+parse :: [TerminalToken] -> Either ParserError Token
+parse terminalTokens = mainParser $ map Terminal terminalTokens
 
--- final parser
 parsers :: [Parser]
 parsers =
     [ literalParser
@@ -51,9 +52,6 @@ parseScan tokens = parsedTentatives
 mainParser :: [Token] -> Either ParserError Token
 mainParser [e] = Right e
 mainParser expressions = getBest (parseScan expressions) >>= mainParser
-
-parse :: [TerminalToken] -> Either ParserError Token
-parse terminalTokens = mainParser $ map Terminal terminalTokens
 
 -- Defining each individual parser
 varParser :: Parser

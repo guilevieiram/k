@@ -1,7 +1,19 @@
 module Tokens where
 
 import Data.List (intercalate)
-import Source
+
+data Source = Source
+    { line :: Int
+    , col :: Int
+    }
+    deriving (Show, Eq)
+
+defaultSource :: Source
+defaultSource =
+    Source
+        { line = 0
+        , col = 0
+        }
 
 data Types = TInt | TFloat | TBool | TNil
     deriving (Show, Eq)
@@ -67,6 +79,19 @@ data Token
     | Terminal TerminalToken
     deriving (Eq)
 
+data Variable
+    = VInt Int
+    | VBool Bool
+    | VFloat Float
+    | VNil
+    deriving (Show, Eq)
+
+getDefaultValue :: Types -> Variable
+getDefaultValue TInt = VInt 0
+getDefaultValue TFloat = VFloat 0
+getDefaultValue TBool = VBool True
+getDefaultValue TNil = VNil
+
 instance Show Token where
     show t = intercalate "\n" (showAst t)
 
@@ -106,4 +131,4 @@ showAst (Terminal t) = ["TERMINAL " ++ show t]
 showAst (IntValue _ i) = ["Int " ++ show i]
 showAst (FloatValue _ f) = ["Float " ++ show f]
 showAst (BoolValue _ b) = ["Bool " ++ show b]
-showAst (NilValue _ ) = ["NILVAL" ]
+showAst (NilValue _) = ["NILVAL"]

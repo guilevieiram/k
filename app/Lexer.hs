@@ -6,15 +6,18 @@ import Text.Regex.TDFA ((=~))
 
 import Data.List (intercalate)
 import Data.List.Split (splitOn)
-import Source
 import Tokens
 import Utils
+
+type SChar = (Char, Source)
 
 newtype LexemeError
     = UnidentifiedToken Source -- when no regex match
     deriving (Show, Eq)
 
-type SChar = (Char, Source)
+-- entrypoint
+tokenize :: [Char] -> Either LexemeError [TerminalToken]
+tokenize = tokenizeTagged . removeComments . tagCoordinates
 
 lexemes :: [(String, String -> Source -> TerminalToken)]
 lexemes =
@@ -53,7 +56,6 @@ lexemes =
     , ("[0-9]+", \s src -> IntLiteral src $ read s)
     , ("[a-zA-Z0-9_]+", flip Identifier)
     ]
-
 
 removeComments :: [SChar] -> [SChar]
 removeComments (('/', _) : ('*', _) : rest) =
@@ -111,6 +113,3 @@ tokenizeTagged input =
             return (lexTok : afterTok)
   where
     trimmed = dropWhile (\(char, _) -> isSpace char) input
-
-tokenize :: [Char] -> Either LexemeError [TerminalToken]
-tokenize = tokenizeTagged . removeComments . tagCoordinates

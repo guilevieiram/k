@@ -64,11 +64,13 @@ executable kompiler
     other-modules:  Lexer, 
                     Parser, 
                     Tokens, 
-                    Source, 
                     Utils, 
                     Semantic,
                     Interpreter,
-                    Types
+                    Monads,
+                    SystemFunctions,
+                    ScopedStack,
+                    States
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

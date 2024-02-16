@@ -1,17 +1,38 @@
-module Interpreter where
+module Interpreter (interpret) where
 
 import Control.Monad.State
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
-
-import Source
-import Tokens
-import Types
 import Data.Foldable (find)
 
-interpret :: Token -> IO ExecutionState
-interpret = (`execStateT` defaultState) . runMaybeT . eval
+import Monads
+import ScopedStack
+import States
+import SystemFunctions
+import Tokens
 
-eval :: Token -> MaybeExecIO Variable
+data ExecutionError
+    = ExecutionError Source
+    | VariableNotFound Source String
+    | OperationError Source String
+    | EvaluationError Source String
+    deriving (Show, Eq)
+
+-- entrypoint
+interpret :: Token -> IO (ExecutionState ExecutionError)
+interpret = (`execStateT` defaultState) . runMaybeT . eval
+  where
+    fStack = [(fName sf, fToken sf) | sf <- sysFunctions]
+    defaultState =
+        ExecutionState
+            { variables = []
+            , declaredFunctions = stackInsertMany fStack []
+            , executingFunctions = []
+            , executionError = Nothing
+            , returnValue = VNil
+            }
+
+-- implementation
+eval :: Token -> MaybeStateIO (ExecutionState ExecutionError) Variable
 eval (Declare _ t name) = do
     eState <- liftFromState get
     let varStack = variables eState
@@ -22,7 +43,7 @@ eval (Var src x) = do
     case stackGet x (variables eState) of
         Nothing -> do
             let errMsg = "Variable " ++ x ++ " is not defined."
-            put eState{executionError = Just $ UndefinedVariable src errMsg}
+            put eState{executionError = Just $ VariableNotFound src errMsg}
             liftFromMaybe Nothing
         Just val -> liftFromVariable val
 eval (Assign src name expr) = do
@@ -35,22 +56,21 @@ eval (Assign src name expr) = do
             liftFromVariable VNil
         Nothing -> do
             let errMsg = "Variable name " ++ name ++ " is not defined in this scope."
-            put eState{executionError = Just $ UndefinedVariable src errMsg}
+            put eState{executionError = Just $ VariableNotFound src errMsg}
             MaybeT $ return Nothing
 eval (IntValue _ x) = liftFromVariable $ VInt x
 eval (FloatValue _ x) = liftFromVariable $ VFloat x
 eval (BoolValue _ x) = liftFromVariable $ VBool x
 eval (Expr _ e) = eval e
-eval (ReturnVal _ e) = do 
+eval (ReturnVal _ e) = do
     value <- eval e
     eState <- liftFromState get
-    liftFromState.put $ eState {returnValue=value}
+    liftFromState . put $ eState{returnValue = value}
     liftFromMaybe Nothing
 eval (Sequence _ []) = liftFromVariable VNil
 eval (Sequence src (e : es)) = do
     _ <- eval e
     eval $ Sequence src es
-
 eval (UnOp src o x) = do
     xVal <- eval x
     compute o xVal
@@ -119,18 +139,16 @@ eval function@(Function _ name _ _ _) = do
     let dFuncStack = declaredFunctions eState
     put $ eState{declaredFunctions = stackInsert name function dFuncStack}
     liftFromVariable VNil
-
 eval (Call _ funcName callArgs@(CallArgs _ cArgs)) = do
-
     eState <- liftFromState get
 
     -- get the arguments names and function
     let dFuncStack = declaredFunctions eState
     callingFunction <- liftFromMaybe $ stackGet funcName dFuncStack
-    
+
     -- checking if sys function is being called
-    let mSysF = find ((==funcName) . fName ) sysFunctions
-    case mSysF of 
+    let mSysF = find ((== funcName) . fName) sysFunctions
+    case mSysF of
         Just sysF -> fImplem sysF eval callArgs
         Nothing -> do
             argsNames <- liftFromMaybe $ getArgs callingFunction
@@ -139,13 +157,14 @@ eval (Call _ funcName callArgs@(CallArgs _ cArgs)) = do
             let varStack = variables eState
             let newVarStack = stackNewScope varStack
             insertedStack <- insertInStack newVarStack (zip argsNames cArgs)
-            
-            -- update the executingFunctions stack 
+
+            -- update the executingFunctions stack
             let execFuncsStack = executingFunctions eState
-            liftFromState . put $ eState
-                {executingFunctions = stackInsert funcName callingFunction execFuncsStack
-                , variables = insertedStack
-                }
+            liftFromState . put $
+                eState
+                    { executingFunctions = stackInsert funcName callingFunction execFuncsStack
+                    , variables = insertedStack
+                    }
 
             -- execute the function
             body <- liftFromMaybe $ getBody callingFunction
@@ -156,7 +175,7 @@ eval (Call _ funcName callArgs@(CallArgs _ cArgs)) = do
             newState <- liftFromState get
             let err = executionError newState
             let returnVal = returnValue newState
-            case err of 
+            case err of
                 -- if there is an error just propagate it
                 Just _ -> liftFromMaybe Nothing
                 -- if no error, we short circuited the return!
@@ -164,14 +183,15 @@ eval (Call _ funcName callArgs@(CallArgs _ cArgs)) = do
                     -- drop the function locals and function jexecution stack
                     let afterVarStack = stackDropScope $ variables newState
                     afterExecFuncStack <- liftFromMaybe . stackDelete funcName $ executingFunctions newState
-                    liftFromState . put $ eState
-                        { executingFunctions = afterExecFuncStack
-                        , variables = afterVarStack
-                        }
+                    liftFromState . put $
+                        eState
+                            { executingFunctions = afterExecFuncStack
+                            , variables = afterVarStack
+                            }
                     --  return the return value
                     liftFromVariable returnVal
   where
-    insertInStack :: ScopedStack Variable -> [(String, Token)] -> MaybeExecIO (ScopedStack Variable)
+    insertInStack :: ScopedStack Variable -> [(String, Token)] -> MaybeStateIO (ExecutionState ExecutionError) (ScopedStack Variable)
     -- insertInStack = undefined
     insertInStack stack [] = return stack
     insertInStack stack ((vname, tok) : rest) = do
@@ -183,9 +203,8 @@ eval (Call _ funcName callArgs@(CallArgs _ cArgs)) = do
     getArg _ = Nothing
     getArgs (Function _ _ _ (Args _ as) _) = mapM getArg as
     getArgs _ = Nothing
-    getBody (Function _ _ _  _ body ) = Just body
+    getBody (Function _ _ _ _ body) = Just body
     getBody _ = Nothing
-
 eval _ = do
     eState <- liftFromState get
     put eState{executionError = Just $ ExecutionError defaultSource}

@@ -3,11 +3,10 @@ module Semantic where
 import Control.Monad.State
 import Data.Either (isLeft, isRight)
 import Data.List
-import Source
+import States
+import SystemFunctions
 import Tokens
-import Types (sysFunctions, fToken)
 
-{- Semantic analyser to validade our syntax tree -}
 data SemanticError
     = SemanticError
     | TerminalTokenFound TerminalToken
@@ -28,43 +27,13 @@ data SemanticError
     | NotImplemented
     deriving (Show, Eq)
 
-type VariablesStack = [(String, Types)]
-type FunctionStack = [Token]
-
-data StateStack = StateStack
-    { vars :: VariablesStack
-    , funcs :: FunctionStack
-    , defFuncs :: FunctionStack
-    }
-
-sysFuncs :: [Token]
-sysFuncs = map fToken sysFunctions
-
-initialStack :: StateStack
-initialStack = StateStack{vars = [], defFuncs = [], funcs = sysFuncs}
-
+-- entrypoint
 analyse :: Token -> Either SemanticError Types
 analyse token = result
   where
     (result, _) = runState (typeOf token) initialStack
-
--- stack related
-getVar :: VariablesStack -> String -> Maybe Types
-getVar stack name = find ((name ==) . fst) stack >>= Just . snd
-
-putVar :: VariablesStack -> (String, Types) -> VariablesStack
-putVar stack (name, t) = (name, t) : stack
-
-getFunc :: FunctionStack -> String -> Maybe Token
-getFunc (f@(Function _ fName _ _ _) : fs) name =
-    if name == fName
-        then Just f
-        else getFunc fs name
-getFunc _ _ = Nothing
-
--- util functions
-isNumeric :: Types -> Bool
-isNumeric t = t `elem` [TFloat, TInt]
+    sysFuncs = map fToken sysFunctions
+    initialStack = StateStack{vars = [], defFuncs = [], funcs = sysFuncs}
 
 {- main semantic analyser -}
 typeOf :: Token -> State StateStack (Either SemanticError Types)
@@ -175,7 +144,7 @@ typeOf func@(Function src _ _ args@(Args _ as) body) = do
     bodyType <- typeOf body
     argsType <- typeOf args
     let res = proc bodyType argsType
-    put $ stacks{vars = varStack, defFuncs = defFuncStack, funcs = func:funcStack}
+    put $ stacks{vars = varStack, defFuncs = defFuncStack, funcs = func : funcStack}
     return res
   where
     proc (Right TNil) (Right TNil) = Right TNil
@@ -210,10 +179,10 @@ typeOf (ReturnVal src val) = do
     proc _ _ = Left $ GenericError src "Non-function token found on function stack."
 
 -- calling functino
-typeOf (Call src fName (CallArgs _ args)) = do
+typeOf (Call src funcName (CallArgs _ args)) = do
     stacks <- get
     let funcStack = funcs stacks
-    let func = getFunc funcStack fName
+    let func = getFunc funcStack funcName
     argsTypes <- mapM typeOf args
     case func of
         Nothing -> return . Left $ UndefinedFunction src "Function not defined in scope."
@@ -255,3 +224,20 @@ findFirstDifferent _ [] = Nothing
 findFirstDifferent (x : xs) (y : ys)
     | x /= y = Just (x, y)
     | otherwise = findFirstDifferent xs ys
+
+-- util functions
+isNumeric :: Types -> Bool
+isNumeric t = t `elem` [TFloat, TInt]
+
+getVar :: VariablesStack -> String -> Maybe Types
+getVar stack name = find ((name ==) . fst) stack >>= Just . snd
+
+putVar :: VariablesStack -> (String, Types) -> VariablesStack
+putVar stack (name, t) = (name, t) : stack
+
+getFunc :: FunctionStack -> String -> Maybe Token
+getFunc (f@(Function _ funcName _ _ _) : fs) name =
+    if name == funcName
+        then Just f
+        else getFunc fs name
+getFunc _ _ = Nothing
