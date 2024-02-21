@@ -1,6 +1,6 @@
 module ScopedStack where
 
-import Data.Functor ((<&>))
+import Data.Foldable (find)
 
 type ScopedStack a = [[(String, a)]]
 
@@ -35,8 +35,12 @@ stackUpdate name var (scope : rest) =
 
 stackDelete :: (Eq a) => String -> ScopedStack a -> Maybe (ScopedStack a)
 stackDelete _ [] = Nothing
-stackDelete name (scope : rest) =
-    let deleted = filter ((/= name) . fst) scope
-     in if deleted == scope
-            then stackDelete name rest <&> (scope :)
-            else return $ deleted : rest
+stackDelete name (scope : rest) = case found of
+    Nothing -> (scope :) <$> stackDelete name rest
+    Just el -> Just $ removeFirst (== el) scope : rest
+  where
+    found = find ((== name) . fst) scope
+    removeFirst _ [] = []
+    removeFirst p (x : xs)
+        | p x = xs
+        | otherwise = x : removeFirst p xs

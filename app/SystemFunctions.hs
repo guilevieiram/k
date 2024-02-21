@@ -18,7 +18,10 @@ data SysFunction e = SysFunction
 sysFunctions :: [SysFunction e]
 sysFunctions = sysPrints ++ sysReads
 
-sysPrint :: (Token -> MaybeStateIO (ExecutionState e) Variable) -> Token -> MaybeStateIO (ExecutionState e) Variable
+sysPrint ::
+    (Token -> MaybeStateIO (ExecutionState e) Variable) ->
+    Token ->
+    MaybeStateIO (ExecutionState e) Variable
 sysPrint exec (CallArgs _ as)
     | length as /= 1 = liftFromMaybe Nothing
     | otherwise = do
@@ -28,11 +31,17 @@ sysPrint exec (CallArgs _ as)
             VInt x -> liftFromIO . putStr $ show x
             VFloat x -> liftFromIO . putStr $ show x
             VBool x -> liftFromIO . putStr $ show x
+            VString x -> liftFromIO . putStr $ processEscapes x
             VNil -> liftFromIO . putStr $ "NIL"
+            VList _ _ -> liftFromMaybe Nothing
         liftFromVariable VNil
 sysPrint _ _ = liftFromMaybe Nothing
 
-sysRead :: (String -> Variable) -> (Token -> MaybeStateIO (ExecutionState e) Variable) -> Token -> MaybeStateIO (ExecutionState e) Variable
+sysRead ::
+    (String -> Variable) ->
+    (Token -> MaybeStateIO (ExecutionState e) Variable) ->
+    Token ->
+    MaybeStateIO (ExecutionState e) Variable
 sysRead reader _ (CallArgs _ as)
     | not (null as) = liftFromMaybe Nothing
     | otherwise =
@@ -58,6 +67,7 @@ sysPrints =
         [ ("print_int", TInt)
         , ("print_float", TFloat)
         , ("print_bool", TBool)
+        , ("print_str", TString)
         ]
     ]
 
@@ -79,3 +89,8 @@ sysReads =
         , ("read_float", VFloat . read, TFloat)
         ]
     ]
+processEscapes :: String -> String
+processEscapes [] = []
+processEscapes ('\\' : 'n' : xs) = '\n' : processEscapes xs
+processEscapes ('\\' : 't' : xs) = '\t' : processEscapes xs
+processEscapes (x : xs) = x : processEscapes xs

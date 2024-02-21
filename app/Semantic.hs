@@ -24,6 +24,7 @@ data SemanticError
     | NumberOfArgumentsUnmatch Source String
     | CallingArgumentWrongType Source String
     | GenericError Source String
+    | ConcatenationWithWrongType Source String
     | NotImplemented
     deriving (Show, Eq)
 
@@ -41,18 +42,24 @@ typeOf :: Token -> State StateStack (Either SemanticError Types)
 typeOf (IntValue _ _) = return $ Right TInt
 typeOf (FloatValue _ _) = return $ Right TFloat
 typeOf (BoolValue _ _) = return $ Right TBool
+typeOf (StringValue _ _) = return $ Right TString
 -- unary operations
 typeOf (UnOp src Not t) = do
     tType <- typeOf t
     case tType of
         Left err -> return $ Left err
         Right TBool -> return $ Right TBool
-        _ -> return . Left $ InvalidOperation src "Negating a non-boolean expression."
-typeOf (UnOp src Minus t) = do
+        Right _ ->
+            return . Left $ InvalidOperation src "Notting a non-boolean expression."
+typeOf (UnOp src Neg t) = do
     tType <- typeOf t
     case tType of
         Left err -> return $ Left err
-        Right ty -> return $ if isNumeric ty then Right ty else Left $ InvalidOperation src "Negating a non-boolean expression."
+        Right ty ->
+            return $
+                if isNumeric ty
+                    then Right ty
+                    else Left $ InvalidOperation src "Negating a non-numeric expression."
 
 -- binary Operations
 typeOf (BinOp src o x y) = do
@@ -60,11 +67,20 @@ typeOf (BinOp src o x y) = do
     yType <- typeOf y
     return $ ret o xType yType
   where
+    inner (TList t) = Right t
+    inner _ = Left $ ConcatenationWithWrongType src "Concat applied to a non-list type"
     ret _ _ (Left e) = Left e
     ret _ (Left e) _ = Left e
     ret op (Right xt) (Right yt)
         | op `elem` [Plus, Minus, Times, Divide] && xt == yt && isNumeric xt = Right xt
         | op `elem` [Gt, Ge, Lt, Le, Eq, Neq] && xt == yt && isNumeric xt = Right TBool
+        | op == Concat && isList xt = do
+            inT <- inner xt
+            if inT == yt
+                then Right xt
+                else
+                    Left $
+                        ConcatenationWithWrongType src "Concat with wrong inner type"
         | otherwise = Left $ InvalidOperation src "Operation not valid"
 
 -- declarations
@@ -85,11 +101,19 @@ typeOf (Assign src x tok) = do
         Right t1 -> decideType t1 varType
   where
     decideType _ Nothing = Left $ UndefinedVariable src x
-    decideType t1 (Just t2) = if t1 == t2 then Right TNil else Left $ InvalidAssignment src "Assignment of wrong type"
+    decideType t1 (Just t2) =
+        if t1 == t2
+            then Right TNil
+            else Left $ InvalidAssignment src "Assignment of wrong type"
 
 -- Expressions
 typeOf (Expr _ tok) = do typeOf tok
-
+-- Statements
+typeOf (Stmt _ tok) = do
+    innerE <- typeOf tok
+    case innerE of
+        Left err -> return . Left $ err
+        Right _ -> return . Right $ TNil
 -- Sequence
 typeOf (Sequence _ toks) = do
     states <- mapM typeOf toks
@@ -178,7 +202,7 @@ typeOf (ReturnVal src val) = do
     proc _ (Left err) = Left err
     proc _ _ = Left $ GenericError src "Non-function token found on function stack."
 
--- calling functino
+-- calling function
 typeOf (Call src funcName (CallArgs _ args)) = do
     stacks <- get
     let funcStack = funcs stacks
@@ -191,7 +215,9 @@ typeOf (Call src funcName (CallArgs _ args)) = do
             case matchArgs src fArgsTypes argsTypes of
                 Left err -> return . Left $ err
                 Right _ -> return . Right $ fType
-        (Just _) -> return . Left $ GenericError src "Something other then function on the functions stack."
+        (Just _) ->
+            return . Left $
+                GenericError src "Something other then function on the functions stack."
 typeOf (CallArg _ val) = do typeOf val
 
 -- clear errors
@@ -199,9 +225,15 @@ typeOf (Terminal t) = return . Left $ TerminalTokenFound t
 typeOf _ = return $ Left SemanticError
 
 -- utility functions
-matchArgs :: Source -> [Either SemanticError Types] -> [Either SemanticError Types] -> Either SemanticError Types
+matchArgs ::
+    Source ->
+    [Either SemanticError Types] ->
+    [Either SemanticError Types] ->
+    Either SemanticError Types
 matchArgs src fArgs cArgs
-    | length fArgs /= length cArgs = Left $ NumberOfArgumentsUnmatch src "Number of args in call does not match function definition"
+    | length fArgs /= length cArgs =
+        Left $
+            NumberOfArgumentsUnmatch src "Number of args in call does not match function definition"
     | not (all isRight fArgs) = head (filter isLeft fArgs)
     | not (all isRight cArgs) = head (filter isLeft cArgs)
     | and (zipWith (==) fArgs cArgs) = Right TNil
@@ -228,6 +260,10 @@ findFirstDifferent (x : xs) (y : ys)
 -- util functions
 isNumeric :: Types -> Bool
 isNumeric t = t `elem` [TFloat, TInt]
+
+isList :: Types -> Bool
+isList (TList _) = True
+isList _ = False
 
 getVar :: VariablesStack -> String -> Maybe Types
 getVar stack name = find ((name ==) . fst) stack >>= Just . snd

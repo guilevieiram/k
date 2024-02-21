@@ -57,3 +57,10 @@ main = do
     args <- getArgs
     sourceCode <- readFile (head args)
     run debug sourceCode
+
+    -- let tokens = tokenize sourceCode
+    -- case tokens of
+    --     Left _ -> return ()
+    --     Right toks -> do
+    --         _ <- stepParse toks
+    --         return ()
