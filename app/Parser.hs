@@ -2,12 +2,15 @@ module Parser where
 
 import Data.Either (isRight)
 import Tokens
+import Utils (processEscapes)
 
 type Parser = [Token] -> Either ParserError [Token]
 
 data ParserError
     = MissingEndStatement Source
     | ExtraEndStatement Source
+    | CharTooLong Source
+    | EmptyChar Source
     | NotMatched Source
     deriving (Show, Eq)
 
@@ -34,6 +37,7 @@ parsers =
     [ typeParser
     , literalParser
     , varParser
+    , arrayParser
     , argsParser
     , opParser
     , ifParser
@@ -76,15 +80,17 @@ typeParser (Terminal (BoolType src) : rest) =
     Right $ TypeDeclaration src TBool : rest
 typeParser (Terminal (StringType src) : rest) =
     Right $ TypeDeclaration src TString : rest
+typeParser (Terminal (CharType src) : rest) =
+    Right $ TypeDeclaration src TChar : rest
 typeParser (Terminal (NilType src) : rest) =
     Right $ TypeDeclaration src TNil : rest
 typeParser
-    ( Terminal (ListType src)
+    ( Terminal (ArrayType src)
             : Terminal (OpenChevron _)
             : TypeDeclaration _ inner
             : Terminal (CloseChevron _)
             : rest
-        ) = Right $ TypeDeclaration src (TList inner) : rest
+        ) = Right $ TypeDeclaration src (TArray inner) : rest
 typeParser _ = Left $ NotMatched defaultSource
 
 -- Defining each individual parser
@@ -104,31 +110,59 @@ varParser
     ( Terminal (Identifier src x)
             : ass@(Terminal (Assigner _))
             : rest
-        ) = Right $ Var src x : ass : rest
+        ) = Right $ Var src x [] : ass : rest
 varParser
     ( td@(TypeDeclaration _ _)
             : Terminal (Identifier src x)
             : rest
-        ) = Right $ td : Var src x : rest
+        ) = Right $ td : Var src x [] : rest
 varParser
     ( Terminal (Identifier src x)
             : rest
-        ) = Right $ Expr src (Var src x) : rest
+        ) = Right $ Expr src (Var src x []) : rest
 varParser
-    ( Var src x
+    ( TypeDeclaration src t
+            : var@(Var _ x _)
             : Terminal (Assigner _)
             : Expr _ e
             : Terminal (EndStatement _)
             : rest
-        ) = Right $ Stmt src (Assign src x e) : rest
+        ) = Right $ Stmt src (Declare src t x) : Stmt src (Assign src var e): rest
+varParser
+    ( var@(Var src _ _)
+            : Terminal (Assigner _)
+            : Expr _ e
+            : Terminal (EndStatement _)
+            : rest
+        ) = Right $ Stmt src (Assign src var e) : rest
 varParser
     ( TypeDeclaration src t
-            : Var _ x
+            : Var _ x _
             : Terminal (EndStatement _)
             : rest
         ) = Right $ Stmt src (Declare src t x) : rest
 varParser _ = Left $ NotMatched defaultSource
 
+-- arrays get and set
+arrayParser :: Parser
+arrayParser
+    ( Expr _ (Var _ name as)
+            : Terminal (OpenBracket src)
+            : e@(Expr _ _)
+            : Terminal (CloseBracket _)
+            : t@(Terminal (Assigner _))
+            : rest
+        ) = Right $ Var src name (as ++ [e]) : t : rest
+arrayParser
+    ( Expr _ (Var _ name as)
+            : Terminal (OpenBracket src)
+            : e@(Expr _ _)
+            : Terminal (CloseBracket _)
+            : rest
+        ) = Right $ Expr src (Var src name (as ++ [e])) : rest
+arrayParser _ = Left $ NotMatched defaultSource
+
+-- braces
 braceParser :: Parser
 braceParser
     ( Terminal (OpenParens _)
@@ -152,14 +186,20 @@ braceParser
     ( Terminal (OpenBrace src)
             : Terminal (CloseBrace _)
             : rest
-        ) = Right $ Sequence src [] : rest
+        ) = Right $ Stmt src (Sequence src []) : rest
 braceParser _ = Left $ NotMatched defaultSource
 
 literalParser :: Parser
 literalParser (Terminal (IntLiteral src i) : rest) = Right $ Expr src (IntValue src i) : rest
 literalParser (Terminal (FloatLiteral src i) : rest) = Right $ Expr src (FloatValue src i) : rest
 literalParser (Terminal (BoolLiteral src i) : rest) = Right $ Expr src (BoolValue src i) : rest
-literalParser (Terminal (StringLiteral src i) : rest) = Right $ Expr src (StringValue src i) : rest
+literalParser (Terminal (StringLiteral src i) : rest) = Right $ Expr src (StringValue src (processEscapes i)) : rest
+literalParser (Terminal (NilLiteral src) : rest) = Right $ Expr src (NilValue src) : rest
+literalParser (Terminal (CharLiteral src i) : rest) = do
+    case processEscapes i of
+        [c] -> Right $ Expr src (CharValue src c) : rest
+        [] -> Left $ EmptyChar src
+        (_:_) -> Left $ CharTooLong src
 literalParser _ = Left $ NotMatched defaultSource
 
 sequenceParser :: Parser
@@ -180,20 +220,18 @@ opParser (Terminal (PlusSign src) : rest) =
     Right $ BinOperation src Plus : rest
 opParser (e@(Expr _ _) : Terminal (MinusSign src) : rest) =
     Right $ e : BinOperation src Minus : rest
-opParser (v@(Var _ _) : Terminal (MinusSign src) : rest) =
-    Right $ v : BinOperation src Minus : rest
 opParser (Terminal (Star src) : rest) =
     Right $ BinOperation src Times : rest
 opParser (Terminal (RightBar src) : rest) =
     Right $ BinOperation src Divide : rest
+opParser (Terminal (AndSign src) : rest) =
+    Right $ BinOperation src AndOp: rest
+opParser (Terminal (OrSign src) : rest) =
+    Right $ BinOperation src OrOp: rest
 opParser (Terminal (OpenChevron src) : e@(Expr _ _) : rest) =
     Right $ BinOperation src Lt : e : rest
-opParser (Terminal (OpenChevron src) : v@(Var _ _) : rest) =
-    Right $ BinOperation src Lt : v : rest
 opParser (Terminal (CloseChevron src) : e@(Expr _ _) : rest) =
     Right $ BinOperation src Lt : e : rest
-opParser (Terminal (CloseChevron src) : v@(Var _ _) : rest) =
-    Right $ BinOperation src Lt : v : rest
 opParser (Terminal (GeSign src) : rest) =
     Right $ BinOperation src Ge : rest
 opParser (Terminal (LeSign src) : rest) =
@@ -261,7 +299,7 @@ argsParser
     ( Args src as
             : Terminal (OpenParens _)
             : TypeDeclaration tsrc t
-            : Var _ x
+            : Var _ x _
             : Terminal (CloseParens _)
             : rest
         ) = Right $ Args src (as ++ [Arg tsrc t x]) : rest
@@ -269,7 +307,7 @@ argsParser
     ( Args src as
             : Terminal (OpenParens _)
             : TypeDeclaration tsrc t
-            : Var _ x
+            : Var _ x _
             : Terminal (Comma _)
             : rest
         ) = Right $ Args src (as ++ [Arg tsrc t x]) : Terminal (OpenParens src) : rest
@@ -310,8 +348,8 @@ argsParser _ = Left $ NotMatched defaultSource
 callParser :: Parser
 callParser
     ( FunctionName _ _
-            : CallArgs _  _
-            : Terminal (OpenParens _) 
+            : CallArgs _ _
+            : Terminal (OpenParens _)
             : _
         ) = Left $ NotMatched defaultSource
 callParser

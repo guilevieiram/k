@@ -10,8 +10,7 @@ int recurrent_factorial(int n)
  * You have while loops that work wonders!
  * */
 int iterative_factorial(int n) {
-    int result;
-    result := 1;
+    int result := 1;
     int i; 
     while i < n do {
         i := i + 1;
@@ -23,32 +22,38 @@ int iterative_factorial(int n) {
 /* Main function
  * Normal function (as in Python for example)*/
 nil main () {
-    int n;
     /* doing some simple IO ...*/
-    print_str("Enter a number:\n");
-    n := read_int();
+    print("Enter a number:\n");
+    int n := str2int(read());
 
-    print_str("Result via recurrent function: ");
-    print_int(recurrent_factorial(n));
-    print_str("\n");
+    print(
+        "Result via recurrent function: "
+        : int2str(recurrent_factorial(n))
+        : "\n"
+    );
 
-    print_str("Result via iterative function: ");
-    print_int(iterative_factorial(n));
-    print_str("\n");
+    print(
+        "Result via iterative function: "
+        : int2str(iterative_factorial(n))
+        : "\n"
+    );
 
     /* Yes you can define funcions inside other functions
      * And closure is a thing.
      * */
     int my_other_function(int x) 
         return x + n;
-    print_str("Result of my other function: ");
-    print_int(my_other_function(n));
-    print_str("\n\n");
+
+    print(
+        "Result of another function: "
+        : int2str(my_other_function(n))
+        : "\n\n"
+    );
+    return none;
 }
 
 /* Since it is all a script, you need to call your main*/
 main();
 
 /* And do anything you want after...*/
-print_str("Look! A float: ");
-print_float(0.0);
+print("Look! A float: " : float2str(420.69) : "\n");

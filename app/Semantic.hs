@@ -25,6 +25,7 @@ data SemanticError
     | CallingArgumentWrongType Source String
     | GenericError Source String
     | ConcatenationWithWrongType Source String
+    | IndexingError Source String
     | NotImplemented
     deriving (Show, Eq)
 
@@ -43,6 +44,8 @@ typeOf (IntValue _ _) = return $ Right TInt
 typeOf (FloatValue _ _) = return $ Right TFloat
 typeOf (BoolValue _ _) = return $ Right TBool
 typeOf (StringValue _ _) = return $ Right TString
+typeOf (CharValue _ _) = return $ Right TChar
+typeOf (NilValue _) = return $ Right TNil
 -- unary operations
 typeOf (UnOp src Not t) = do
     tType <- typeOf t
@@ -67,20 +70,17 @@ typeOf (BinOp src o x y) = do
     yType <- typeOf y
     return $ ret o xType yType
   where
-    inner (TList t) = Right t
-    inner _ = Left $ ConcatenationWithWrongType src "Concat applied to a non-list type"
     ret _ _ (Left e) = Left e
     ret _ (Left e) _ = Left e
     ret op (Right xt) (Right yt)
         | op `elem` [Plus, Minus, Times, Divide] && xt == yt && isNumeric xt = Right xt
-        | op `elem` [Gt, Ge, Lt, Le, Eq, Neq] && xt == yt && isNumeric xt = Right TBool
-        | op == Concat && isList xt = do
-            inT <- inner xt
-            if inT == yt
-                then Right xt
-                else
-                    Left $
-                        ConcatenationWithWrongType src "Concat with wrong inner type"
+        | op `elem` [AndOp, OrOp] && xt == yt && xt == TBool = Right TBool
+        | op `elem` [Eq, Neq] && xt == yt = Right TBool
+        | op `elem` [Gt, Ge, Lt, Le] && xt == yt && isNumeric xt = Right TBool
+        | op == Concat && xt == yt = case xt of
+            TString -> Right TString
+            TArray t -> Right (TArray t)
+            _ -> Left $ InvalidOperation src "Operation not valid"
         | otherwise = Left $ InvalidOperation src "Operation not valid"
 
 -- declarations
@@ -91,18 +91,16 @@ typeOf (Declare _ ty x) = do
     return . Right $ TNil
 
 -- assignments
-typeOf (Assign src x tok) = do
-    stacks <- get
-    let varStack = vars stacks
+typeOf (Assign src var@(Var{}) tok) = do
     tokType <- typeOf tok
-    let varType = getVar varStack x
-    return $ case tokType of
-        Left err -> Left err
-        Right t1 -> decideType t1 varType
+    varType <- typeOf var
+    return $ case (varType, tokType) of
+        (Right vt, Right et) -> decideType et vt
+        (Left err, _) -> Left err
+        (_, Left err) -> Left err
   where
-    decideType _ Nothing = Left $ UndefinedVariable src x
-    decideType t1 (Just t2) =
-        if t1 == t2
+    decideType et xt =
+        if isSubtype xt et
             then Right TNil
             else Left $ InvalidAssignment src "Assignment of wrong type"
 
@@ -123,13 +121,22 @@ typeOf (Sequence _ toks) = do
             else Right TNil
 
 -- Variables
-typeOf (Var src x) = do
+typeOf (Var src x as) = do
     stacks <- get
     let varStack = vars stacks
     let xType = getVar varStack x
-    return $ case xType of
-        Nothing -> Left $ UndefinedVariable src "Use of undefined variable"
-        Just t -> Right t
+    case xType of
+        Nothing -> return . Left $ UndefinedVariable src "Use of undefined variable"
+        Just t -> compute as t
+    where 
+        compute (e: es) (TArray t) = do
+            aType <- typeOf e
+            case aType of
+                Left err -> return $ Left err
+                Right TInt -> compute es t 
+                Right other -> return $ Left $ IndexingError src ("index did not evaluate to int. Got : " ++ show other)
+        compute [] t = return $ Right t
+        compute _ t = return .Left $ IndexingError src ("Trying to index a non-array: " ++ show t)
 
 -- Conditionals
 typeOf (Conditional src cond tr fl) = do
@@ -196,7 +203,7 @@ typeOf (ReturnVal src val) = do
         (func : _) -> proc func rType
   where
     proc (Function _ _ funcType _ _) (Right retType) =
-        if funcType == retType
+        if isSubtype funcType retType
             then Right TNil
             else Left $ ReturnWithWrongType src "Bad type of returned expression"
     proc _ (Left err) = Left err
@@ -237,7 +244,7 @@ matchArgs src fArgs cArgs
     | not (all isRight fArgs) = head (filter isLeft fArgs)
     | not (all isRight cArgs) = head (filter isLeft cArgs)
     | and (zipWith (==) fArgs cArgs) = Right TNil
-    | otherwise = case findFirstDifferent fArgs cArgs of
+    | otherwise = case findFirstDifferent isSub fArgs cArgs of
         Nothing -> Right TNil
         Just (t1, t2) ->
             Left $
@@ -249,21 +256,25 @@ matchArgs src fArgs cArgs
                         ++ " - Calling "
                         ++ show t2
                     )
+  where
+    isSub x y = case liftM2 isSubtype x y of
+        Left _ -> False
+        Right val -> val
 
-findFirstDifferent :: (Eq a) => [a] -> [a] -> Maybe (a, a)
-findFirstDifferent [] _ = Nothing
-findFirstDifferent _ [] = Nothing
-findFirstDifferent (x : xs) (y : ys)
-    | x /= y = Just (x, y)
-    | otherwise = findFirstDifferent xs ys
+findFirstDifferent :: (Eq a) => (a -> a -> Bool) -> [a] -> [a] -> Maybe (a, a)
+findFirstDifferent _ [] _ = Nothing
+findFirstDifferent _ _ [] = Nothing
+findFirstDifferent comp (x : xs) (y : ys)
+    | not $ comp x y = Just (x, y)
+    | otherwise = findFirstDifferent comp xs ys
 
 -- util functions
 isNumeric :: Types -> Bool
 isNumeric t = t `elem` [TFloat, TInt]
 
-isList :: Types -> Bool
-isList (TList _) = True
-isList _ = False
+isArray :: Types -> Bool
+isArray (TArray _) = True
+isArray _ = False
 
 getVar :: VariablesStack -> String -> Maybe Types
 getVar stack name = find ((name ==) . fst) stack >>= Just . snd
@@ -277,3 +288,8 @@ getFunc (f@(Function _ funcName _ _ _) : fs) name =
         then Just f
         else getFunc fs name
 getFunc _ _ = Nothing
+
+isSubtype :: Types -> Types -> Bool
+isSubtype TAny _ = True
+isSubtype (TArray out) (TArray inn) = isSubtype out inn
+isSubtype outter inner = inner == outter

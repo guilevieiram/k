@@ -1,6 +1,7 @@
 module Tokens where
 
 import Data.List (intercalate)
+
 data Source = Source
     { line :: Int
     , col :: Int
@@ -14,13 +15,15 @@ defaultSource =
         , col = 0
         }
 
-data Types 
-    = TInt 
-    | TFloat 
-    | TBool 
+data Types
+    = TInt
+    | TFloat
+    | TBool
     | TNil
     | TString
-    | TList Types
+    | TChar
+    | TArray Types
+    | TAny
     deriving (Show, Eq)
 
 data BinOperator
@@ -33,12 +36,14 @@ data BinOperator
     | Lt
     | Le
     | Eq
+    | AndOp
+    | OrOp
     | Neq
     | Concat
     deriving (Show, Eq)
 
 data UnOperator
-    = Not 
+    = Not
     | Neg
     deriving (Show, Eq)
 
@@ -60,6 +65,8 @@ data TerminalToken
     | Else Source
     | While Source
     | Do Source
+    | AndSign Source
+    | OrSign Source
     | EqSign Source
     | NeqSign Source
     | GeSign Source
@@ -70,16 +77,19 @@ data TerminalToken
     | Star Source
     | RightBar Source
     | Collon Source
-    | ListType Source
+    | ArrayType Source
     | IntType Source
     | FloatType Source
     | BoolType Source
     | NilType Source
     | StringType Source
+    | CharType Source
     | IntLiteral Source Int
     | FloatLiteral Source Float
     | BoolLiteral Source Bool
+    | NilLiteral Source
     | StringLiteral Source String
+    | CharLiteral Source String
     | Identifier Source [Char]
     deriving (Show, Eq)
 
@@ -87,7 +97,7 @@ data Token
     = Expr Source Token
     | Stmt Source Token
     | Sequence Source [Token]
-    | Var Source String
+    | Var Source String [Token]
     | FunctionName Source String
     | Arg Source Types String
     | Args Source [Token]
@@ -99,7 +109,7 @@ data Token
     | Conditional Source Token Token Token
     | WhileLoop Source Token Token
     | Declare Source Types String
-    | Assign Source String Token
+    | Assign Source Token Token
     | BinOperation Source BinOperator
     | UnOperation Source UnOperator
     | BinOp Source BinOperator Token Token
@@ -109,8 +119,9 @@ data Token
     | FloatValue Source Float
     | BoolValue Source Bool
     | StringValue Source String
+    | CharValue Source Char
     | NilValue Source
-    | ListValue Source Types [Token]
+    | ArrayValue Source Types [Token]
     | Terminal TerminalToken
     deriving (Eq)
 
@@ -119,25 +130,29 @@ data Variable
     | VBool Bool
     | VFloat Float
     | VString String
+    | VChar Char
     | VNil
-    | VList Types [Variable]
+    | VArray Types [Variable]
     deriving (Show, Eq)
 
 getDefaultValue :: Types -> Variable
 getDefaultValue TInt = VInt 0
-getDefaultValue TFloat =  VFloat 0
-getDefaultValue TBool =  VBool True
+getDefaultValue TFloat = VFloat 0
+getDefaultValue TBool = VBool True
 getDefaultValue TNil = VNil
 getDefaultValue TString = VString ""
-getDefaultValue (TList t) =  VList t []
+getDefaultValue TChar = VChar '-'
+getDefaultValue (TArray t) = VArray t []
+getDefaultValue TAny = VNil
 
 getType :: Variable -> Types
 getType (VInt _) = TInt
 getType (VFloat _) = TFloat
 getType (VBool _) = TBool
 getType (VString _) = TString
+getType (VChar _) = TChar
 getType VNil = TNil
-getType (VList t _) = TList t
+getType (VArray t _) = TArray t
 
 instance Show Token where
     show t = intercalate "\n" (showAst t)
@@ -153,7 +168,7 @@ showAst :: Token -> [String]
 showAst (Expr _ t) = "Expr:" : addNewLine (showAst t)
 showAst (Stmt _ t) = "Stmt:" : addNewLine (showAst t)
 showAst (Sequence _ s) = "Sequence: " : push s
-showAst (Var _ x) = ["Var " ++ x]
+showAst (Var _ x as) = ("Var " ++ x) : push as
 showAst (FunctionName _ x) = ["FuncName " ++ x]
 showAst (Arg _ t s) = ["Arg " ++ show t ++ " " ++ s]
 showAst (Args _ as) = "Args " : push as
@@ -173,7 +188,7 @@ showAst (WhileLoop _ cond body) =
         ++ addNewLine ("Cond: " : push [cond])
         ++ addNewLine ("Do: " : push [body])
 showAst (Declare _ t name) = ["Declare (" ++ show t ++ ") " ++ name]
-showAst (Assign _ name val) = ("Assign " ++ name) : push [val]
+showAst (Assign _ name val) = "Assign " : push [name, val]
 showAst (BinOperation _ op) = ["BinOperation " ++ show op]
 showAst (UnOperation _ op) = ["UnOperation " ++ show op]
 showAst (BinOp _ op i j) = ("BinOP " ++ show op) : push [i, j]
@@ -183,6 +198,7 @@ showAst (IntValue _ i) = ["Int " ++ show i]
 showAst (FloatValue _ f) = ["Float " ++ show f]
 showAst (BoolValue _ b) = ["Bool " ++ show b]
 showAst (StringValue _ s) = ["String " ++ s]
+showAst (CharValue _ s) = ["Char " ++ [s]]
 showAst (NilValue _) = ["NILVAL"]
-showAst (ListValue _ t vals) = ("List <|" ++ show t ++ "|>" ): push vals
-showAst (TypeDeclaration _ t ) = ["TypeDecl " ++ show t ]
+showAst (ArrayValue _ t vals) = ("Array <" ++ show t ++ ">") : push vals
+showAst (TypeDeclaration _ t) = ["TypeDecl " ++ show t]

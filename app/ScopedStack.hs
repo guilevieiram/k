@@ -16,6 +16,14 @@ stackGet name (scope : rest) =
         Just var -> Just var
         Nothing -> stackGet name rest
 
+stackGetFromVal :: (Eq a) => a -> ScopedStack a -> Maybe String
+stackGetFromVal _ [] = Nothing
+stackGetFromVal var (scope : rest) =
+    case lookup var (map rev scope)of
+        Just name -> Just name 
+        Nothing -> stackGetFromVal var rest
+    where rev (x, y) = (y, x)
+
 stackInsert :: String -> a -> ScopedStack a -> ScopedStack a
 stackInsert name var [] = [[(name, var)]]
 stackInsert name var (scope : rest) = ((name, var) : scope) : rest

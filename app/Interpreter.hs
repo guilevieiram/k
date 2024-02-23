@@ -9,12 +9,14 @@ import ScopedStack
 import States
 import SystemFunctions
 import Tokens
+import Utils (replaceNth)
 
 data ExecutionError
     = ExecutionError Source
     | VariableNotFound Source String
     | OperationError Source String
     | EvaluationError Source String
+    | IndexError Source String
     deriving (Show, Eq)
 
 -- entrypoint
@@ -42,17 +44,28 @@ eval (Declare _ t name) = do
     liftFromVariable VNil
 
 -- vars
-eval (Var src x) = do
+eval (Var src x as) = do
     eState <- liftFromState get
     case stackGet x (variables eState) of
         Nothing -> do
             let errMsg = "Variable " ++ x ++ " is not defined."
             put eState{executionError = Just $ VariableNotFound src errMsg}
             liftFromMaybe Nothing
-        Just val -> liftFromVariable val
+        Just val -> getVar as val
+  where
+    getVar (e : es) (VArray _ vals) = do
+        eVal <- eval e
+        case eVal of
+            VInt i ->
+                if i < length vals
+                    then getVar es (vals !! i)
+                    else liftFromMaybe Nothing
+            _ -> liftFromMaybe Nothing
+    getVar [] v = liftFromVariable v
+    getVar _ _ = liftFromMaybe Nothing
 
 -- assigning
-eval (Assign src name expr) = do
+eval (Assign src (Var _ name []) expr) = do
     eValue <- eval expr
     eState <- liftFromState get
     let varStack = variables eState
@@ -64,12 +77,51 @@ eval (Assign src name expr) = do
             let errMsg = "Variable name " ++ name ++ " is not defined in this scope."
             put eState{executionError = Just $ VariableNotFound src errMsg}
             MaybeT $ return Nothing
+eval (Assign src (Var _ name as) expr) = do
+    eValue <- eval expr
+    eState <- liftFromState get
+    let varStack = variables eState
+    let arrVar = stackGet name varStack
+    case arrVar of
+        Nothing -> do
+            let errMsg = "Variable name " ++ name ++ " is not defined in this scope."
+            put eState{executionError = Just $ VariableNotFound src errMsg}
+            MaybeT $ return Nothing
+        Just arr -> replace eValue as arr
+  where
+    replace val (e : es) (VArray arrSrc ar) = do
+        eVal <- eval e
+        case eVal of
+            VInt i -> do
+                eState <- liftFromState get
+                new <- replace val es (ar !! i)
+                case replaceNth i new ar of
+                    Nothing -> do
+                        let errMsg = "Indexing out of bounds ."
+                        put eState{executionError = Just $ IndexError src errMsg}
+                        liftFromMaybe Nothing
+                    Just newArray -> updateVar name (VArray arrSrc newArray) eState
+            _ -> liftFromMaybe Nothing
+    replace val [] _ = liftFromVariable val
+    replace _ _ _ = liftFromMaybe Nothing
+    updateVar varName val eState = do
+        let varStack = variables eState
+        case stackUpdate varName val varStack of
+            Just newMap -> do
+                put eState{variables = newMap}
+                liftFromVariable VNil
+            Nothing -> do
+                let errMsg = "Variable name " ++ varName ++ " is not defined in this scope."
+                put eState{executionError = Just $ VariableNotFound src errMsg}
+                MaybeT $ return Nothing
 
 -- values
 eval (IntValue _ x) = liftFromVariable $ VInt x
 eval (FloatValue _ x) = liftFromVariable $ VFloat x
 eval (BoolValue _ x) = liftFromVariable $ VBool x
 eval (StringValue _ x) = liftFromVariable $ VString x
+eval (CharValue _ x) = liftFromVariable $ VChar x
+eval (NilValue _) = liftFromVariable VNil
 -- expressions, statements and sequences
 eval (Expr _ e) = eval e
 eval (Stmt _ e) = eval e
@@ -108,15 +160,23 @@ eval (BinOp src o x y) = do
     compute Ge (VInt xval) (VInt yval) = liftFromVariable . VBool $ xval >= yval
     compute Lt (VInt xval) (VInt yval) = liftFromVariable . VBool $ xval < yval
     compute Le (VInt xval) (VInt yval) = liftFromVariable . VBool $ xval <= yval
-    compute Eq (VInt xval) (VInt yval) = liftFromVariable . VBool $ xval == yval
-    compute Neq (VInt xval) (VInt yval) = liftFromVariable . VBool $ xval /= yval
     compute Gt (VFloat xval) (VFloat yval) = liftFromVariable . VBool $ xval > yval
     compute Ge (VFloat xval) (VFloat yval) = liftFromVariable . VBool $ xval >= yval
     compute Lt (VFloat xval) (VFloat yval) = liftFromVariable . VBool $ xval < yval
     compute Le (VFloat xval) (VFloat yval) = liftFromVariable . VBool $ xval <= yval
-    compute Eq (VFloat xval) (VFloat yval) = liftFromVariable . VBool $ xval == yval
-    compute Neq (VFloat xval) (VFloat yval) = liftFromVariable . VBool $ xval /= yval
-    compute Concat (VList xt xVar) yVar = liftFromVariable $ VList xt (xVar ++ [yVar])
+    compute Eq v1 v2 = liftFromVariable . VBool $ v1 == v2
+    compute Neq v1 v2 = liftFromVariable . VBool $ v1 /= v2
+    compute AndOp (VBool b1) (VBool b2) = liftFromVariable . VBool $ b1 && b2
+    compute OrOp (VBool b1) (VBool b2) = liftFromVariable . VBool $ b1 || b2
+    compute Concat (VString xs) (VString ys) = liftFromVariable $ VString (xs ++ ys)
+    compute Concat (VArray tx xs) (VArray ty ys) =
+        if tx == ty
+            then liftFromVariable $ VArray tx (xs ++ ys)
+            else do
+                eState <- liftFromState get
+                let msg = "Concatting lists of wrong inner type"
+                put $ eState{executionError = Just $ OperationError src msg}
+                liftFromMaybe Nothing
     compute _ _ _ = do
         eState <- liftFromState get
         let msg = "operation error with operand " ++ show o

@@ -43,9 +43,9 @@ execute debug (Right ast) =
             putStrLn "------------------------------------------------------"
             execState <- interpret ast
             putStrLn "\n------------------------------------------------------"
-            putStrLn "\n\nFinal Program State:"
+            putStrLn "\n\nFinal Program Variables:"
             putStrLn "------------------------------------------------------"
-            print execState
+            print $ variables execState
             putStrLn "------------------------------------------------------"
 
 run :: Bool -> String -> IO ()
@@ -59,6 +59,7 @@ main = do
     run debug sourceCode
 
     -- let tokens = tokenize sourceCode
+    -- print tokens
     -- case tokens of
     --     Left _ -> return ()
     --     Right toks -> do
