@@ -1,15 +1,24 @@
-# k
+<div 
+    style="margin: auto; width: full; display: flex; flex-direction: column; align-items: center; justify-content: space-between" align="center">
+    <h1 style="margin:auto;width:100%">
+        🇰
+    </h1>
+</div>
 
-*k* is a programming language I built as an exercise to learn about parsers, interpreters and programming in general. It's syntax is heavily inspired by C but with a couple tweaks to make it unique. Is is a work in progress and tere aren't a lot of features yet, but it sure does the job.
+--------------
+
+*k* is a programming language I built as an exercise to learn about parsers, interpreters and programming in general. It's syntax is heavily inspired by C but with a couple tweaks to make it unique. Is is a work in progress and there aren't a lot of built-in features yet.
 
 Everything from the command line interface to the interpreter was made using Haskell, without relying on external packages to parse code or transverse abstract trees. 
 
 The whole project took me about two weeks of work and I am very proud to present a couple working code snippets in the repo.
 
 Of course, any feedback on the project is very valuable and you can reach out anytime!
+
+--------------
  
-## Installing
-The installation of the interpreter relies on Haskell (of course) and on Cabal, a package manager. If you don't have them installed, I suggest you install first *ghcup* a manager that will take care of everything for you. 
+## 💾 Installing
+The installation of the interpreter relies on Haskell (of course) and on Cabal, a package manager. If you don't have them installed, I suggest you install them via **ghcup**. 
 
 To install ghcup on Linux, MacOS or WSL2, run the following command:
 
@@ -18,7 +27,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
 ```
 (This is extracted from the official documentation on https://www.haskell.org/ghcup/)
 
-Feel free to install GHC (Haskell's compiler) and Cabal separatelly on your machine as they are the only programs you need.
+If you want, feel free to install GHC (Haskell's compiler) and Cabal separatelly on your machine as they are the only programs you need.
+
 
 Once you have ghcup (or GHC and Cabal) you can make a local executable by running:
 ```bash
@@ -30,63 +40,64 @@ To install it on your system as a binary, run
 make install
 ```
 
-## Usage
+## 🔨 Usage
 To use the interpreter:
 ```bash
 ./k <filename> [-d]
+
+# example
+./k factorial.k -d
 ```
-Where the flag `-d` indicates debug mode.
+Where the flag `-d` indicates debug mode that shows relevant information on the stdout.
 
-## Examples
+## ✍️  Examples
 
-You can find some examples under the `examples` folder. I have wrote:
-- A `factorial` function
-- A solution to the `two sum` problem.
-- A `brainfuck` interpreter
-- Conway's `Game of life`
+You can find some examples under the `examples` folder:
+- An implementation of `factorial` , iterative and recursive;
+- A solution to the `two sum` problem;
+- A `brainfuck` interpreter;
+- Conway's `Game of life`;
 
-Doom its not a thing yet, but I think this examples show that this language works quite okey.
+We still don't have a doom implementation, but feel free to contribute.
 
-## Language 
-
-Here I'll list some of the main features of the language without boring everyone with formal grammars.
+## 💬 Language 
 
 ### Primitive types
-Currently there is support for `int`, `float`,  `bool`, `nil`,  `char` and `str` that are represented by Haskells primitives.
+Currently there is support for `int`, `float`,  `bool`, `nil`,  `char` and `str`.
 
+The types are represented by Haskell's types under the hood.
 
 ### Variables and Expressions
+To name variables you can use any combination of letters, numbers and underscore.
 
 ```k
-/* To declare a variable */
-int my_int_variable;
-
-/* Default values are assigned 
- * when you declare them.
- * In this case my_variable is 0
+/* 
+ * When delcaring a variable
+ * default values are assigned directly.
+ * In this case my_variable is 0.
  */
+int my_int_variable;
 
 
 /* Assigning values */
 my_float := 2.0;
 
-/* Both at the same time! */
+/* Declaring and assigning at once. */
 str my_string := "look, im a string!";
 
-/* You can operate on them as you'd expect */
+/* You can operate on the types as you'd expect */
 int result := my_int + my_other_int;
 
 /* Order of operation is not enforced, so use () */
 float float_result := 
     (my_float - my_other_float) * 0.69 ;
 
-/* Be careful of a couple different symbols from C */
+/* Be careful of a couple symbols that are different from C */
 bool my_bool := 
     (my_int = 42) | (false & true);
 
 ```
 
-To name variables you can use any combination of letters, numbers and underscore.
 
 ### Control flow
 If statements are of the form `if <boolean expr> then <statement> else <statement>`
@@ -100,7 +111,7 @@ else {
 }
  
 /* Note that statments can be stacked via {} 
- * but not necessarily.
+ * but this is not always necessary.
  */
  if b then x := 1; else x := 0;
 
@@ -110,13 +121,13 @@ Loops are achieved via the while statement `while <boolean expr> do <statement>`
 ```k
 int i; /* Initialized to 0 */
 while i < 10 do {
-    x := 10 * x;
+    x := (i + 1) * x;
     i := i + 1;
 }
 ```
 
 ### Functions
-To declare functions you do like in C.
+Declaring them is like in C. Note that there is neither default values nor variable number of arguments.
 ```k
 int my_function (int arg1, float arg1){
     int x := 2 * arg1;
@@ -130,29 +141,28 @@ float relu (float x)
 
 ```
 
-To call functions, also the same drill;
+Calling functions is like in C.
 ```k
 float x := relu(3.9);
 
-/* You can also throw out the result */
+/* You can also throw out undesired results */
 my_function(1, 1.9);
 ```
 
-If your function does not return anything (booo side-effects) you can mark it with `nil`.
+If your function does not return anything you can mark it with the `nil` return type.
 ```k
-nil process_this(int x){
+nil main(){
     /*...*/
 }
 ```
 
 ### Arrays
-Arrays behave a little bit different that you would expect here, so bear with me.
 ```k
 /* Declaring an array of ints */
 array<int> my_array;
 
 /* At this point it is empty
- * But we can allocate some space like so
+ * But we can allocate some memory like so
  */
 
 make_array(my_array, 10);
@@ -161,14 +171,13 @@ make_array(my_array, 10);
  * This cannot be changed unless you call make_array again
  * or reasign the variable to another value.
  */
-
-
+```
+```k
 /* You can assign or reference values as you'd expect */
 my_array[2] := 3;
 int x := my_array[0] + 1;
 
-
-/* You can concat arrays to create a new one */
+/* You can concat arrays to create a new one via : */
 array<int> new_array :=
     first_array : second_array;
 
@@ -184,11 +193,10 @@ Strings are mainly for IO purposes in this language, but we make other methods a
 /* Declare literals with double quotes */
 str my_string := "Hi there!";
 
-/* You can also concat them like arrays */
-my_string := my_string : "My name is Guile.";
+/* Concat them like arrays */
+my_string := my_string : "I love k-lang.";
 
-
-/* You can also transform them in chars */
+/* Transform them in chars */
 array<char> stream := str2chars(my_string);
 stream[0]; /* H */
 stream[1]; /* i */
@@ -199,14 +207,16 @@ stream[3] := '\n';
 ```
 
 ### IO
-IO is hard to do in Haskell but very easy in k. There are to main functionalities that you should use: `print` and `read`, together with a bunch of conversions.
+IO is hard to do in Haskell but very easy in *k*. 
+
+There are to main functionalities that you should use: `print` and `read`, together with a bunch of conversions.
 ```k
 /* Print something to the stdout */
 print("Hi Mom!\n"); 
 
-
 /* This function only accepts one str 
- * so if you want to print other values, you need to convert them.
+ * so if you want to print other values, 
+ * you need to convert and concat them.
  */
 print("My values are:\n"
     : int2str(3) : "\n"
@@ -214,8 +224,9 @@ print("My values are:\n"
     : bool2str(true) : "\n"
     : char2str('a') : "\n"
 );
+```
 
-
+```k
 /* Read works very similarly. 
  * It reads from the stdin until a new line is encountered.
  * It then returns you a str with the value read.
@@ -231,7 +242,9 @@ char my_char := str2char("A");
 
 ### Types
 The language is type safe since we check the whole program before interpreting.
+
 However, it does not enforce type safety at run time as it would double the work.
+
 To check a type at runtime, you can make use of a builtin typeof function.
 ```k
 if typeof(x) = "int" then
@@ -241,12 +254,10 @@ else
 ```
 
  
-## Next steps
-Of course the language still lacks many many features, but the ones we are most excited for the future are:
+## ⏭️  Next steps
+Of course the language still lacks many features, but the ones we are most excited for the future are:
 
 - Better error handling and error messages, showing common mistakes at parsing and execution time.
-- Write a backend to convert the AST into assembly to get a more performant code. This can take some time because I don't want to use fancy tools like LLVM to do it....
-- Enhanced type system with type definitions `type stream := array<char>;` and structs `struct s {int a; float b;}`
+- Write a backend to convert the AST into assembly to get a more performant code. This can take some time because I want to do it "by hand".
+- Enhanced type system with type definitions (`type stream := array<char>;`) and structs (`struct s {int a; float b;}`)
 - Write an LSP for a better development environment.
-
-
