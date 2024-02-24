@@ -81,6 +81,7 @@ executable k
                       , split
                       , mtl
                       , containers
+                      , directory 
                       , transformers
 
     -- Directories containing source files.

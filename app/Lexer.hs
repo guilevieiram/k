@@ -2,10 +2,10 @@ module Lexer where
 
 import Control.Monad (msum)
 import Data.Char (isSpace)
-import Text.Regex.TDFA ((=~))
-
 import Data.List (intercalate)
 import Data.List.Split (splitOn)
+import Text.Regex.TDFA ((=~))
+
 import Tokens
 import Utils
 
@@ -40,7 +40,7 @@ lexemes =
     , ("<", const OpenChevron)
     , (">", const CloseChevron)
     , ("=", const EqSign)
-    , ("/=", const NeqSign)
+    , ("!=", const NeqSign)
     , ("!", const NotSign)
     , (",", const Comma)
     , (":", const Collon)

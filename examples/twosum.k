@@ -20,12 +20,15 @@ array<int> two_sum (array<int> arr, int tar){
 
 nil main() {
     /* Gettin input from user */
+    print("Input the target value: ");
     int target := str2int(read());
+    print("Input the number of values in the array: ");
     int n := str2int(read());
 
     array<int> l;
     make_array(l, n);
     int i;
+    print("Input the array elements: \n");
     while i < n do{
         l[i] := str2int(read());
         i := i + 1;

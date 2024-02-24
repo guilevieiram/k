@@ -3,6 +3,7 @@ module Semantic where
 import Control.Monad.State
 import Data.Either (isLeft, isRight)
 import Data.List
+
 import States
 import SystemFunctions
 import Tokens
@@ -128,15 +129,15 @@ typeOf (Var src x as) = do
     case xType of
         Nothing -> return . Left $ UndefinedVariable src "Use of undefined variable"
         Just t -> compute as t
-    where 
-        compute (e: es) (TArray t) = do
-            aType <- typeOf e
-            case aType of
-                Left err -> return $ Left err
-                Right TInt -> compute es t 
-                Right other -> return $ Left $ IndexingError src ("index did not evaluate to int. Got : " ++ show other)
-        compute [] t = return $ Right t
-        compute _ t = return .Left $ IndexingError src ("Trying to index a non-array: " ++ show t)
+  where
+    compute (e : es) (TArray t) = do
+        aType <- typeOf e
+        case aType of
+            Left err -> return $ Left err
+            Right TInt -> compute es t
+            Right other -> return $ Left $ IndexingError src ("index did not evaluate to int. Got : " ++ show other)
+    compute [] t = return $ Right t
+    compute _ t = return . Left $ IndexingError src ("Trying to index a non-array: " ++ show t)
 
 -- Conditionals
 typeOf (Conditional src cond tr fl) = do

@@ -91,6 +91,7 @@ eval (Assign src (Var _ name as) expr) = do
   where
     replace val (e : es) (VArray arrSrc ar) = do
         eVal <- eval e
+
         case eVal of
             VInt i -> do
                 eState <- liftFromState get
@@ -100,7 +101,8 @@ eval (Assign src (Var _ name as) expr) = do
                         let errMsg = "Indexing out of bounds ."
                         put eState{executionError = Just $ IndexError src errMsg}
                         liftFromMaybe Nothing
-                    Just newArray -> updateVar name (VArray arrSrc newArray) eState
+                    Just newArray -> do
+                        updateVar name (VArray arrSrc newArray) eState
             _ -> liftFromMaybe Nothing
     replace val [] _ = liftFromVariable val
     replace _ _ _ = liftFromMaybe Nothing
@@ -109,7 +111,7 @@ eval (Assign src (Var _ name as) expr) = do
         case stackUpdate varName val varStack of
             Just newMap -> do
                 put eState{variables = newMap}
-                liftFromVariable VNil
+                liftFromVariable val
             Nothing -> do
                 let errMsg = "Variable name " ++ varName ++ " is not defined in this scope."
                 put eState{executionError = Just $ VariableNotFound src errMsg}

@@ -2,6 +2,8 @@ module SystemFunctions where
 
 import Control.Monad.State
 import Data.List
+import System.IO (hFlush, stdout)
+
 import Monads
 import ScopedStack
 import States
@@ -104,6 +106,7 @@ sysIos :: [SysFunction e]
 sysIos =
     [ SysFunction
         { fName = "print"
+        , fImplem = sysPrint
         , fToken =
             Function
                 defaultSource
@@ -111,7 +114,6 @@ sysIos =
                 TNil
                 (Args defaultSource [Arg defaultSource TString ""])
                 (NilValue defaultSource)
-        , fImplem = sysPrint
         }
     , SysFunction
         { fName = "read"
@@ -180,7 +182,7 @@ sysMakeArray
             case stackUpdate varName val varStack of
                 Just newMap -> do
                     put eState{variables = newMap}
-                    liftFromVariable VNil
+                    liftFromVariable val
                 Nothing -> liftFromMaybe Nothing
 sysMakeArray _ _ = liftFromMaybe Nothing
 
@@ -211,7 +213,8 @@ sysPrint exec (CallArgs _ as)
     | otherwise = do
         let arg = head as
         aVal <- exec arg
-        liftFromIO . putStr $ strVar aVal
+        _ <- liftFromIO . putStr . strVar $ aVal
+        liftFromIO $ hFlush stdout
         liftFromVariable VNil
   where
     strVar v = case v of

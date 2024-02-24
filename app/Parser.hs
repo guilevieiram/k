@@ -1,6 +1,7 @@
 module Parser where
 
 import Data.Either (isRight)
+
 import Tokens
 import Utils (processEscapes)
 
@@ -127,7 +128,7 @@ varParser
             : Expr _ e
             : Terminal (EndStatement _)
             : rest
-        ) = Right $ Stmt src (Declare src t x) : Stmt src (Assign src var e): rest
+        ) = Right $ Stmt src (Declare src t x) : Stmt src (Assign src var e) : rest
 varParser
     ( var@(Var src _ _)
             : Terminal (Assigner _)
@@ -199,7 +200,7 @@ literalParser (Terminal (CharLiteral src i) : rest) = do
     case processEscapes i of
         [c] -> Right $ Expr src (CharValue src c) : rest
         [] -> Left $ EmptyChar src
-        (_:_) -> Left $ CharTooLong src
+        (_ : _) -> Left $ CharTooLong src
 literalParser _ = Left $ NotMatched defaultSource
 
 sequenceParser :: Parser
@@ -225,13 +226,13 @@ opParser (Terminal (Star src) : rest) =
 opParser (Terminal (RightBar src) : rest) =
     Right $ BinOperation src Divide : rest
 opParser (Terminal (AndSign src) : rest) =
-    Right $ BinOperation src AndOp: rest
+    Right $ BinOperation src AndOp : rest
 opParser (Terminal (OrSign src) : rest) =
-    Right $ BinOperation src OrOp: rest
+    Right $ BinOperation src OrOp : rest
 opParser (Terminal (OpenChevron src) : e@(Expr _ _) : rest) =
     Right $ BinOperation src Lt : e : rest
 opParser (Terminal (CloseChevron src) : e@(Expr _ _) : rest) =
-    Right $ BinOperation src Lt : e : rest
+    Right $ BinOperation src Gt : e : rest
 opParser (Terminal (GeSign src) : rest) =
     Right $ BinOperation src Ge : rest
 opParser (Terminal (LeSign src) : rest) =
