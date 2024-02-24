@@ -16,8 +16,24 @@ The whole project took me about two weeks of work and I am very proud to present
 Of course, any feedback on the project is very valuable and you can reach out anytime!
 
 --------------
+
+## ↪️  Table of contents
+1. [Installing](#installing)
+2. [Usage](#usage)
+3. [Examples](#examples)
+4. [Language](#language)
+    1. [Primitive Types](#primitive-types)
+    2. [Variables and Expressions](#variables-and-expressions)
+    3. [Control Flow](#control-flow)
+    4. [Functions](#functions)
+    5. [Arrays](#arrays)
+    6. [Strings](#strings)
+    7. [IO](#io)
+    8. [Types](#types)
+5. [Next Steps](#next-steps)
+
  
-## 💾 Installing
+## 💾 Installing <a name="installing"/>
 The installation of the interpreter relies on Haskell (of course) and on Cabal, a package manager. If you don't have them installed, I suggest you install them via **ghcup**. 
 
 To install ghcup on Linux, MacOS or WSL2, run the following command:
@@ -40,7 +56,7 @@ To install it on your system as a binary, run
 make install
 ```
 
-## 🔨 Usage
+## 🔨 Usage <a name="usage"/>
 To use the interpreter:
 ```bash
 ./k <filename> [-d]
@@ -50,7 +66,7 @@ To use the interpreter:
 ```
 Where the flag `-d` indicates debug mode that shows relevant information on the stdout.
 
-## ✍️  Examples
+## ✍️  Examples<a name="examples"/>
 
 You can find some examples under the `examples` folder:
 - An implementation of `factorial` , iterative and recursive;
@@ -60,7 +76,7 @@ You can find some examples under the `examples` folder:
 
 We still don't have a doom implementation, but feel free to contribute.
 
-## 💬 Language 
+## 💬 Language <a name="language"/>
 
 ### Primitive types
 Currently there is support for `int`, `float`,  `bool`, `nil`,  `char` and `str`.
@@ -254,7 +270,8 @@ else
 ```
 
  
-## ⏭️  Next steps
+## ⏭️  Next Steps <a name="next-steps"/>
+
 Of course the language still lacks many features, but the ones we are most excited for the future are:
 
 - Better error handling and error messages, showing common mistakes at parsing and execution time.
